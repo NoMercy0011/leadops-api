@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualite:
+    name: Pint + Larastan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_mysql, mbstring, openssl, tokenizer, xml, ctype, curl, fileinfo, bcmath, zip
+          coverage: none
+
+      - name: Installer les dépendances
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Formatage (Pint)
+        run: ./vendor/bin/pint --test
+
+      - name: Analyse statique (Larastan niveau 6)
+        run: ./vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+  tests:
+    name: Tests (MariaDB ${{ matrix.mariadb }})
+    runs-on: ubuntu-latest
+
+    # Le développement se fait sur MariaDB 10.4 (XAMPP) mais la production
+    # visera une branche sous maintenance longue — cf. §9.1 du plan d'action.
+    # Exécuter les deux versions rend visible toute divergence de moteur,
+    # notamment sur la colonne générée du §3.5.
+    strategy:
+      fail-fast: false
+      matrix:
+        mariadb: ['10.4', '11.4']
+
+    services:
+      mariadb:
+        image: mariadb:${{ matrix.mariadb }}
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: leadops_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_mysql, mbstring, openssl, tokenizer, xml, ctype, curl, fileinfo, bcmath, zip
+          coverage: none
+
+      - name: Installer les dépendances
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Préparer l'environnement
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Migrations
+        env:
+          DB_CONNECTION: mariadb
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: leadops_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: php artisan migrate --no-interaction
+
+      - name: Tests
+        env:
+          DB_CONNECTION: mariadb
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: leadops_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: php artisan test

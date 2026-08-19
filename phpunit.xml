@@ -23,8 +23,15 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!--
+            Les tests tournent sur MariaDB, pas sur SQLite en mémoire. C'est
+            plus lent, mais tester sur un moteur différent de celui de
+            production laisserait passer précisément ce qu'on veut vérifier :
+            colonnes générées, contraintes, comportement JSON. La CI utilise la
+            même base, avec une matrice MariaDB 10.4 / 11.4.
+        -->
+        <env name="DB_CONNECTION" value="mariadb"/>
+        <env name="DB_DATABASE" value="leadops_test"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>

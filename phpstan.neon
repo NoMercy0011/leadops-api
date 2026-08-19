@@ -1,0 +1,16 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 6
+
+    paths:
+        - app
+        - database
+        - routes
+        - tests
+
+    # NOTE : `checkModelProperties: true` serait utile sur un projet aussi
+    # orienté schéma, mais le pseudo-type `model property of X` qu'il impose
+    # dans les factories n'est pas analysable par Larastan 3.10. À réévaluer
+    # lors d'une montée de version.

@@ -36,8 +36,14 @@ class AppointmentController extends Controller
             'to' => ['sometimes', 'date', 'after_or_equal:from'],
             'user_id' => ['sometimes', 'string'],
             'project_id' => ['sometimes', 'integer'],
+            'prospect_id' => ['sometimes', 'integer'],
             'status' => ['sometimes', Rule::enum(AppointmentStatus::class)],
         ]);
+
+        // La fiche d'un prospect montre tout son historique de rendez-vous :
+        // la borner à une période obligerait l'appelant à deviner une plage
+        // assez large, ou à ramener tout l'agenda pour le filtrer ensuite.
+        $prospectId = $donnees['prospect_id'] ?? null;
 
         $fuseau = TimezoneResolver::for($request->user());
 
@@ -56,7 +62,13 @@ class AppointmentController extends Controller
 
         $appointments = Appointment::query()
             ->visibleTo($request->user())
-            ->between($ouverture, $fermeture)
+            // Le filtre par prospect remplace les bornes temporelles plutôt
+            // que de s'y ajouter : on veut alors tout son historique.
+            ->when(
+                $prospectId !== null,
+                fn ($q) => $q->where('prospect_id', $prospectId),
+                fn ($q) => $q->between($ouverture, $fermeture),
+            )
             ->with(['prospect', 'project', 'user'])
             ->when(
                 isset($donnees['user_id']),

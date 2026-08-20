@@ -33,13 +33,6 @@ class AnswerValidationTest extends TestCase
 
     private Prospect $prospect;
 
-    /**
-     * Les positions sont attribuées séquentiellement plutôt que par la
-     * factory, dont le tirage aléatoire rendrait l'ordre d'affichage
-     * imprévisible — or c'est précisément ce qu'un des tests vérifie.
-     */
-    private int $position = 1;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -60,11 +53,9 @@ class AnswerValidationTest extends TestCase
         $question = Question::factory()
             ->forProject($this->project)
             ->ofType($type)
-            ->create([
-                'required' => $requise,
-                'label' => $type->label(),
-                'position' => $this->position++,
-            ]);
+            // La position est attribuée séquentiellement par la factory, comme
+            // en production : l'ordre d'affichage est donc celui de création.
+            ->create(['required' => $requise, 'label' => $type->label()]);
 
         if ($type->requiresOptions()) {
             foreach ([['Alpha', 'alpha'], ['Beta', 'beta']] as $index => [$libelle, $valeur]) {

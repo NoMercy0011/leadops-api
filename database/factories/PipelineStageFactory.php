@@ -26,11 +26,40 @@ class PipelineStageFactory extends Factory
                 ->whereKey($attributs['project_id'])
                 ->value('company_id'),
             'name' => fake()->unique()->word(),
-            'position' => fake()->unique()->numberBetween(1, 10000),
+            // `position` est posée par `configure()`, qui seul sait tenir le
+            // compte à l'intérieur d'un lot.
             'is_won' => false,
             'is_lost' => false,
             'color' => StageColor::Slate,
         ];
+    }
+
+    /**
+     * Attribue une position séquentielle, comme le fait PipelineService en
+     * production.
+     *
+     * Même raison que pour QuestionFactory : un tirage aléatoire satisfait la
+     * contrainte d'unicité mais rend l'ordre du pipeline imprévisible. Le
+     * compteur de lot est nécessaire parce que `count(N)->create()` construit
+     * toutes les instances avant d'en persister aucune.
+     */
+    public function configure(): static
+    {
+        $dernieres = [];
+
+        return $this->afterMaking(function (PipelineStage $stage) use (&$dernieres): void {
+            $projet = (int) $stage->project_id;
+
+            $enBase = (int) PipelineStage::query()
+                ->acrossAllCompanies()
+                ->where('project_id', $projet)
+                ->max('position');
+
+            $suivante = max($enBase, $dernieres[$projet] ?? 0) + 1;
+
+            $dernieres[$projet] = $suivante;
+            $stage->position = $suivante;
+        });
     }
 
     public function forProject(Project $project): static

@@ -28,8 +28,46 @@ class QuestionFactory extends Factory
             'type' => QuestionType::Text,
             'label' => fake()->sentence(3),
             'required' => false,
-            'position' => fake()->unique()->numberBetween(1, 10000),
+            // `position` est posée par `configure()`, qui seul sait tenir le
+            // compte à l'intérieur d'un lot.
         ];
+    }
+
+    /**
+     * Attribue une position séquentielle, comme le fait QuestionnaireService en
+     * production.
+     *
+     * Un tirage aléatoire satisfait la contrainte d'unicité mais rend l'ordre
+     * d'affichage imprévisible : des tests d'ordre passent ou échouent selon le
+     * tirage, ce qui est pire qu'un échec franc.
+     *
+     * Le compteur de lot est indispensable : `count(4)->create()` construit les
+     * quatre instances **avant** d'en persister aucune, si bien qu'une lecture
+     * de `max(position)` renverrait la même valeur pour les quatre. Il est
+     * capturé par référence plutôt que porté par `$this` — les factories se
+     * clonent à chaque appel de méthode, et l'état porté par l'objet se
+     * perdrait en route.
+     */
+    public function configure(): static
+    {
+        $dernieres = [];
+
+        return $this->afterMaking(function (Question $question) use (&$dernieres): void {
+            $projet = (int) $question->project_id;
+
+            // `withTrashed` : une question supprimée garde sa position, et
+            // l'ignorer heurterait la clé unique (project_id, position).
+            $enBase = (int) Question::query()
+                ->withTrashed()
+                ->acrossAllCompanies()
+                ->where('project_id', $projet)
+                ->max('position');
+
+            $suivante = max($enBase, $dernieres[$projet] ?? 0) + 1;
+
+            $dernieres[$projet] = $suivante;
+            $question->position = $suivante;
+        });
     }
 
     public function forProject(Project $project): static

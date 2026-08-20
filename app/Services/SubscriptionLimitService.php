@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\SubscriptionLimitReached;
 use App\Models\Company;
+use App\Models\Project;
 use App\Models\User;
 
 /**
@@ -139,8 +140,10 @@ final class SubscriptionLimitService
 
     private function countProjects(Company $company): int
     {
-        // Lot 3.
-        return 0;
+        return Project::query()
+            ->acrossAllCompanies()
+            ->where('company_id', $company->id)
+            ->count();
     }
 
     private function countProspects(Company $company): int

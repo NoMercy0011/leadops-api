@@ -2,12 +2,16 @@
 
 namespace Database\Seeders;
 
+use App\Enums\ProjectStatus;
 use App\Enums\SubscriptionStatus;
 use App\Enums\UserRole;
 use App\Models\Company;
 use App\Models\Plan;
+use App\Models\Project;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Models\Variant;
+use App\Services\PipelineService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -61,8 +65,59 @@ class DatabaseSeeder extends Seeder
         $admin = $this->creerUtilisateur($entreprise->id, "Admin {$nom}", "admin@{$domaine}", UserRole::AdminClient);
         $manager = $this->creerUtilisateur($entreprise->id, "Manager {$nom}", "manager@{$domaine}", UserRole::Manager, $admin->id);
 
-        $this->creerUtilisateur($entreprise->id, "Commercial 1 {$nom}", "commercial1@{$domaine}", UserRole::Commercial, $manager->id);
-        $this->creerUtilisateur($entreprise->id, "Commercial 2 {$nom}", "commercial2@{$domaine}", UserRole::Commercial, $manager->id);
+        $c1 = $this->creerUtilisateur($entreprise->id, "Commercial 1 {$nom}", "commercial1@{$domaine}", UserRole::Commercial, $manager->id);
+        $c2 = $this->creerUtilisateur($entreprise->id, "Commercial 2 {$nom}", "commercial2@{$domaine}", UserRole::Commercial, $manager->id);
+
+        $this->creerProjets($entreprise, [$c1, $c2]);
+    }
+
+    /**
+     * Deux projets par entreprise, de variantes différentes.
+     *
+     * C'est le minimum pour vérifier à la main que les pipelines sont bien
+     * indépendants : avec un seul projet, l'invariant n°2 ne se voit pas.
+     *
+     * @param  list<User>  $commerciaux
+     */
+    private function creerProjets(Company $entreprise, array $commerciaux): void
+    {
+        $variantes = collect(['Particulier', 'Entreprise'])
+            ->mapWithKeys(fn (string $nom, int $index) => [
+                $nom => Variant::query()->updateOrCreate(
+                    ['company_id' => $entreprise->id, 'name' => $nom],
+                    ['position' => $index + 1]
+                ),
+            ]);
+
+        $catalogue = [
+            ['Assurance Santé', 'Assurance Santé Premium', 'Particuliers', 'Particulier'],
+            ['Crédit Immobilier', 'Prêt à taux fixe', 'Ménages primo-accédants', 'Entreprise'],
+        ];
+
+        foreach ($catalogue as [$nomProjet, $produit, $cible, $variante]) {
+            $existe = Project::query()
+                ->acrossAllCompanies()
+                ->where('company_id', $entreprise->id)
+                ->where('name', $nomProjet)
+                ->exists();
+
+            if ($existe) {
+                continue;
+            }
+
+            $projet = Project::query()->create([
+                'company_id' => $entreprise->id,
+                'variant_id' => $variantes[$variante]->id,
+                'name' => $nomProjet,
+                'product' => $produit,
+                'target' => $cible,
+                'status' => ProjectStatus::Active,
+            ]);
+
+            app(PipelineService::class)->createDefaultStages($projet);
+
+            $projet->members()->sync(collect($commerciaux)->pluck('id')->all());
+        }
     }
 
     private function creerUtilisateur(int $companyId, string $nom, string $email, UserRole $role, ?int $managerId = null): User

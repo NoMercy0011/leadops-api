@@ -175,6 +175,19 @@ class DatabaseSeeder extends Seeder
                 app(ActivityLogger::class)->noteAdded($prospect, 'Premier contact établi, à recontacter.');
             }
 
+            // Quelques dossiers menés à leur terme : sans cela le tableau de
+            // bord affiche 0 % partout, et rien ne permet de juger l'écran.
+            // Le passage se fait par le service, seul à poser les jalons.
+            if ($index % 6 === 2) {
+                app(ProspectService::class)->moveToStage($prospect, $etapes->firstWhere('is_won', true));
+            } elseif ($index % 6 === 5) {
+                app(ProspectService::class)->moveToStage($prospect, $etapes->firstWhere('is_lost', true));
+            } elseif ($index % 6 === 4) {
+                // Qualifié sans être conclu : c'est ce cas qui distingue le
+                // taux de qualification du taux de conversion.
+                app(ProspectService::class)->moveToStage($prospect, $etapes->firstWhere('is_qualified', true));
+            }
+
             // Un prospect sur trois a un rendez-vous, réparti entre passé et
             // futur et couvrant les quatre statuts : un calendrier dont tous
             // les rendez-vous sont identiques ne permet pas de juger l'écran.

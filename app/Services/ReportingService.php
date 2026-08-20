@@ -132,11 +132,16 @@ final class ReportingService
     }
 
     /**
-     * Répartition des prospects par étape, tous projets confondus.
+     * Répartition des prospects par étape.
      *
-     * Une seule requête groupée, jointe aux étapes pour récupérer libellé et
-     * couleur. Interroger projet par projet multiplierait les allers-retours
-     * par le nombre de projets.
+     * Le nom du projet accompagne chaque étape, et ce n'est pas décoratif :
+     * les pipelines étant propres à chaque projet, deux étapes homonymes sont
+     * deux étapes différentes. Sans cette colonne, un tableau affichant
+     * « Nouveau 3 » deux fois laisse croire à un doublon là où il s'agit de
+     * deux projets distincts.
+     *
+     * Une seule requête groupée. Interroger projet par projet multiplierait
+     * les allers-retours par le nombre de projets.
      *
      * @return list<array<string, mixed>>
      */
@@ -145,9 +150,11 @@ final class ReportingService
         return Prospect::query()
             ->visibleTo($viewer)
             ->join('pipeline_stages', 'prospects.stage_id', '=', 'pipeline_stages.id')
+            ->join('projects', 'pipeline_stages.project_id', '=', 'projects.id')
             ->select([
                 'pipeline_stages.id as stage_id',
                 'pipeline_stages.name as stage',
+                'projects.name as project',
                 'pipeline_stages.color as color',
                 'pipeline_stages.position as position',
                 'pipeline_stages.is_won as is_won',
@@ -155,9 +162,14 @@ final class ReportingService
                 DB::raw('COUNT(prospects.id) as total'),
             ])
             ->groupBy(
-                'pipeline_stages.id', 'pipeline_stages.name', 'pipeline_stages.color',
-                'pipeline_stages.position', 'pipeline_stages.is_won', 'pipeline_stages.is_lost',
+                'pipeline_stages.id', 'pipeline_stages.name', 'projects.name',
+                'pipeline_stages.color', 'pipeline_stages.position',
+                'pipeline_stages.is_won', 'pipeline_stages.is_lost',
             )
+            // Par projet puis par position : mêler les étapes de deux projets
+            // dans un même ordre de position produirait une alternance
+            // incompréhensible.
+            ->orderBy('projects.name')
             ->orderBy('pipeline_stages.position')
             // `toBase` : ces lignes ne sont pas des prospects mais des
             // agrégats joints. Les hydrater en modèles serait à la fois plus
@@ -168,6 +180,7 @@ final class ReportingService
             ->map(fn (object $ligne) => [
                 'stage_id' => (int) $ligne->stage_id,
                 'stage' => $ligne->stage,
+                'project' => $ligne->project,
                 'color' => $ligne->color,
                 'is_won' => (bool) $ligne->is_won,
                 'is_lost' => (bool) $ligne->is_lost,

@@ -31,9 +31,20 @@ final class ProspectService
         return DB::transaction(function () use ($project, $donnees, $imported) {
             $prospect = new Prospect($donnees);
 
+            $etape = isset($donnees['stage_id'])
+                ? $project->stages()->findOrFail($donnees['stage_id'])
+                : $this->firstStage($project);
+
             $prospect->company_id = $project->company_id;
             $prospect->project_id = $project->id;
-            $prospect->stage_id = $donnees['stage_id'] ?? $this->firstStage($project)->id;
+            $prospect->stage_id = $etape->id;
+
+            // Les jalons sont posés dès la création, et pas seulement au
+            // changement d'étape. Un import ou une saisie plaçant d'emblée le
+            // prospect à une étape qualifiante le laisserait sinon sans jalon :
+            // il apparaîtrait « Qualifié » dans le pipeline sans compter dans
+            // le taux de qualification — deux écrans, deux vérités.
+            $this->appliquerJalons($prospect, $etape);
 
             $this->applyNormalizedContact($prospect, $project);
 
@@ -72,37 +83,7 @@ final class ProspectService
         return DB::transaction(function () use ($prospect, $ancienne, $stage) {
             $prospect->stage_id = $stage->id;
 
-            // Les horodatages de sortie sont posés au premier passage et jamais
-            // écrasés : un aller-retour entre étapes ne doit pas repousser la
-            // date de conversion, dont dépend le calcul des durées de cycle.
-            if ($stage->is_won && $prospect->converted_at === null) {
-                $prospect->converted_at = now();
-            }
-
-            if ($stage->is_lost && $prospect->lost_at === null) {
-                $prospect->lost_at = now();
-            }
-
-            // La qualification, elle, ne se défait jamais — contrairement aux
-            // deux jalons ci-dessus. Un prospect qualifié puis perdu a bel et
-            // bien été qualifié ; l'oublier ferait chuter le taux de
-            // qualification à mesure que les dossiers se closent, et
-            // l'indicateur mesurerait le stock restant plutôt que le travail
-            // accompli.
-            if ($stage->is_qualified && $prospect->qualified_at === null) {
-                $prospect->qualified_at = now();
-            }
-
-            // Un retour en arrière depuis une étape terminale rouvre le
-            // dossier : laisser les dates en place le ferait compter comme
-            // converti *et* actif dans les rapports.
-            if (! $stage->is_won) {
-                $prospect->converted_at = null;
-            }
-
-            if (! $stage->is_lost) {
-                $prospect->lost_at = null;
-            }
+            $this->appliquerJalons($prospect, $stage);
 
             $prospect->save();
 
@@ -115,6 +96,50 @@ final class ProspectService
 
             return $prospect->fresh(['stage', 'assignedUser']);
         });
+    }
+
+    /**
+     * Pose les jalons horodatés qu'implique une étape.
+     *
+     * Point unique, appelé à la création comme au changement d'étape : deux
+     * copies de cette logique divergeraient, et un prospect apparaîtrait
+     * converti dans le pipeline sans compter dans le taux de conversion.
+     *
+     * Les trois jalons n'obéissent pas à la même règle, et c'est délibéré :
+     *
+     * - **Conversion et perte se défont.** Un retour en arrière depuis une
+     *   étape terminale rouvre le dossier ; laisser la date en place le ferait
+     *   compter comme converti *et* actif dans les rapports.
+     * - **La qualification ne se défait jamais.** Un prospect qualifié puis
+     *   perdu a bel et bien été qualifié. L'oublier ferait chuter le taux de
+     *   qualification à mesure que les dossiers se closent, et l'indicateur
+     *   mesurerait le stock restant plutôt que le travail accompli.
+     *
+     * Aucun jalon n'est repoussé s'il est déjà posé : un aller-retour entre
+     * étapes ne doit pas décaler une date de conversion, dont dépend le calcul
+     * des durées de cycle.
+     */
+    private function appliquerJalons(Prospect $prospect, PipelineStage $stage): void
+    {
+        if ($stage->is_won && $prospect->converted_at === null) {
+            $prospect->converted_at = now();
+        }
+
+        if ($stage->is_lost && $prospect->lost_at === null) {
+            $prospect->lost_at = now();
+        }
+
+        if ($stage->is_qualified && $prospect->qualified_at === null) {
+            $prospect->qualified_at = now();
+        }
+
+        if (! $stage->is_won) {
+            $prospect->converted_at = null;
+        }
+
+        if (! $stage->is_lost) {
+            $prospect->lost_at = null;
+        }
     }
 
     public function assign(Prospect $prospect, ?User $nouveau): Prospect

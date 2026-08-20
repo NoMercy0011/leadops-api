@@ -107,6 +107,24 @@ class ReportingTest extends TestCase
         $this->assertNull($frais->converted_at);
     }
 
+    public function test_un_prospect_cree_directement_a_une_etape_qualifiante_porte_le_jalon(): void
+    {
+        // Cas de l'import, ou d'une saisie plaçant d'emblée le prospect plus
+        // loin dans le pipeline. Sans jalon, il apparaîtrait « Qualifié » dans
+        // le pipeline sans compter dans le taux — deux écrans, deux vérités.
+        $prospect = app(ProspectService::class)->create($this->project, [
+            'first_name' => 'Importé',
+            'stage_id' => $this->etape('is_qualified')->id,
+        ]);
+
+        $this->assertNotNull($prospect->qualified_at);
+
+        $this->actingAs($this->admin)
+            ->getJson('/api/v1/reports?from='.now()->subYear()->toDateString())
+            ->assertOk()
+            ->assertJsonPath('data.totals.qualified', 1);
+    }
+
     public function test_un_taux_sur_zero_prospect_vaut_null_et_non_zero(): void
     {
         $rapport = $this->actingAs($this->admin)->getJson('/api/v1/reports')->assertOk();

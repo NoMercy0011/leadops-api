@@ -40,7 +40,10 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::prefix('v1')->group(function () {
+// `throttle:api` couvre tout le préfixe. Les groupes plus stricts — écritures,
+// opérations lourdes — s'y ajoutent plus bas : Laravel applique alors les deux
+// limiteurs, et c'est le plus restrictif qui tranche.
+Route::prefix('v1')->middleware('throttle:api')->group(function () {
     Route::prefix('auth')->group(function () {
         Route::post('login', [LoginController::class, 'store'])->name('auth.login');
         Route::post('forgot-password', [PasswordResetController::class, 'sendLink'])->name('auth.forgot-password');
@@ -101,8 +104,13 @@ Route::prefix('v1')->group(function () {
             // Prospects. Les routes littérales précèdent celles paramétrées sur
             // {prospect} : sans cela « import », « export », « duplicates » et
             // « bulk-assign » seraient capturés comme des identifiants.
-            Route::post('prospects/import', [ProspectImportController::class, 'store'])->name('prospects.import');
-            Route::get('prospects/export', [ProspectImportController::class, 'export'])->name('prospects.export');
+            // Import et export mobilisent la base plusieurs secondes : quelques
+            // appels par minute suffisent à l'usage réel, et au-delà c'est un
+            // script, pas un humain.
+            Route::post('prospects/import', [ProspectImportController::class, 'store'])
+                ->middleware('throttle:heavy')->name('prospects.import');
+            Route::get('prospects/export', [ProspectImportController::class, 'export'])
+                ->middleware('throttle:heavy')->name('prospects.export');
             Route::get('prospects/duplicates', [ProspectController::class, 'duplicates'])->name('prospects.duplicates');
             Route::patch('prospects/bulk-assign', [ProspectActionController::class, 'bulkAssign'])->name('prospects.bulk-assign');
 
@@ -126,7 +134,8 @@ Route::prefix('v1')->group(function () {
             // listing pour rester lisible, l'ordre n'important pas ici —
             // aucune n'est paramétrée.
             Route::get('dashboard', [ReportController::class, 'dashboard'])->name('dashboard');
-            Route::get('reports/export', [ReportController::class, 'export'])->name('reports.export');
+            Route::get('reports/export', [ReportController::class, 'export'])
+                ->middleware('throttle:heavy')->name('reports.export');
             Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
 
             // Rendez-vous. `index` accepte une plage de journées locales,

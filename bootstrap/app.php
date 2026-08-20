@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AddLogContext;
 use App\Http\Middleware\EnsureSubscriptionAllowsWrites;
 use App\Http\Middleware\EnsureSuperAdmin;
 use Illuminate\Foundation\Application;
@@ -18,6 +19,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'subscription.writes' => EnsureSubscriptionAllowsWrites::class,
             'super-admin' => EnsureSuperAdmin::class,
+        ]);
+
+        // Après l'authentification : le contexte n'a d'intérêt que si
+        // l'utilisateur est déjà résolu, sinon company_id et role sont nuls.
+        $middleware->api(append: [
+            AddLogContext::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -8,10 +8,13 @@ use App\Enums\UserRole;
 use App\Models\Company;
 use App\Models\Plan;
 use App\Models\Project;
+use App\Models\Prospect;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Models\Variant;
+use App\Services\ActivityLogger;
 use App\Services\PipelineService;
+use App\Services\ProspectService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -117,6 +120,57 @@ class DatabaseSeeder extends Seeder
             app(PipelineService::class)->createDefaultStages($projet);
 
             $projet->members()->sync(collect($commerciaux)->pluck('id')->all());
+
+            $this->creerProspects($projet->fresh(), $commerciaux);
+        }
+    }
+
+    /**
+     * Prospects répartis sur le pipeline, dont quelques-uns non affectés.
+     *
+     * L'objectif n'est pas le volume mais la variété : un kanban dont toutes
+     * les colonnes sont vides sauf la première ne permet pas de juger l'écran,
+     * et sans prospect libre on ne peut pas essayer la distribution.
+     *
+     * @param  list<User>  $commerciaux
+     */
+    private function creerProspects(Project $projet, array $commerciaux): void
+    {
+        if (Prospect::query()->acrossAllCompanies()->where('project_id', $projet->id)->exists()) {
+            return;
+        }
+
+        $etapes = $projet->stages()->orderBy('position')->get();
+        $service = app(ProspectService::class);
+
+        $noms = [
+            ['Jean', 'Dupont'], ['Marie', 'Rakoto'], ['Paul', 'Martin'],
+            ['Sarah', 'Randria'], ['Luc', 'Bernard'], ['Hery', 'Rasoa'],
+            ['Nadia', 'Andria'], ['Eric', 'Petit'], ['Fara', 'Rabe'],
+            ['Tovo', 'Rakotoson'], ['Aina', 'Ravelo'], ['Koto', 'Rajao'],
+        ];
+
+        foreach ($noms as $index => [$prenom, $nom]) {
+            $etape = $etapes[$index % max(1, $etapes->count() - 2)];
+
+            // Un prospect sur quatre reste libre, à distribuer.
+            $commercial = $index % 4 === 3
+                ? null
+                : $commerciaux[$index % count($commerciaux)];
+
+            $prospect = $service->create($projet, [
+                'first_name' => $prenom,
+                'last_name' => $nom,
+                'phone' => '+2613'.(2 + $index % 3).str_pad((string) (1000000 + $index * 37), 7, '0', STR_PAD_LEFT),
+                'email' => mb_strtolower($prenom.'.'.$nom).'@example.com',
+                'source' => ['Salon', 'Site web', 'Recommandation', 'Appel entrant'][$index % 4],
+                'assigned_user_id' => $commercial?->id,
+                'stage_id' => $etape->id,
+            ]);
+
+            if ($index % 3 === 0) {
+                app(ActivityLogger::class)->noteAdded($prospect, 'Premier contact établi, à recontacter.');
+            }
         }
     }
 

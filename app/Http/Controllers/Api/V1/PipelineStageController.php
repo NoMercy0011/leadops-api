@@ -43,6 +43,7 @@ class PipelineStageController extends Controller
             'color' => ['sometimes', Rule::enum(StageColor::class)],
             'is_won' => ['sometimes', 'boolean'],
             'is_lost' => ['sometimes', 'boolean'],
+            'is_qualified' => ['sometimes', 'boolean'],
         ]);
 
         $this->assertTerminalitéCohérente($project, $donnees);
@@ -74,6 +75,7 @@ class PipelineStageController extends Controller
             'color' => ['sometimes', Rule::enum(StageColor::class)],
             'is_won' => ['sometimes', 'boolean'],
             'is_lost' => ['sometimes', 'boolean'],
+            'is_qualified' => ['sometimes', 'boolean'],
         ]);
 
         $this->assertTerminalitéCohérente($project, $donnees, $stage);
@@ -174,7 +176,13 @@ class PipelineStageController extends Controller
         array $donnees,
         ?PipelineStage $enCours = null,
     ): void {
-        foreach (['is_won' => 'gagnante', 'is_lost' => 'perdue'] as $drapeau => $libelle) {
+        $drapeaux = [
+            'is_won' => 'gagnante',
+            'is_lost' => 'perdue',
+            'is_qualified' => 'qualifiante',
+        ];
+
+        foreach ($drapeaux as $drapeau => $libelle) {
             if (! ($donnees[$drapeau] ?? false)) {
                 continue;
             }

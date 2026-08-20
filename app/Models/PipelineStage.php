@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $position
  * @property bool $is_won
  * @property bool $is_lost
+ * @property bool $is_qualified
  * @property StageColor $color
  */
 // `company_id` est explicitement assignable, contrairement aux autres modèles
@@ -27,7 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 // l'utilisateur qui la crée. S'en remettre à l'observer du trait rattacherait
 // l'étape au mauvais tenant dès qu'un contexte sans utilisateur intervient —
 // service appelé directement, seeder, commande console.
-#[Fillable(['company_id', 'project_id', 'name', 'position', 'is_won', 'is_lost', 'color'])]
+#[Fillable(['company_id', 'project_id', 'name', 'position', 'is_won', 'is_lost', 'is_qualified', 'color'])]
 class PipelineStage extends Model
 {
     /** @use HasFactory<PipelineStageFactory> */
@@ -39,6 +40,7 @@ class PipelineStage extends Model
     protected $attributes = [
         'is_won' => false,
         'is_lost' => false,
+        'is_qualified' => false,
         'color' => StageColor::Slate->value,
     ];
 
@@ -51,6 +53,7 @@ class PipelineStage extends Model
             'position' => 'integer',
             'is_won' => 'boolean',
             'is_lost' => 'boolean',
+            'is_qualified' => 'boolean',
             'color' => StageColor::class,
         ];
     }

@@ -7,16 +7,22 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\PipelineStageResource;
 use App\Models\PipelineStage;
 use App\Models\Project;
+use App\Models\Prospect;
 use App\Services\PipelineService;
+use App\Services\ProspectService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class PipelineStageController extends Controller
 {
-    public function __construct(private readonly PipelineService $pipeline) {}
+    public function __construct(
+        private readonly PipelineService $pipeline,
+        private readonly ProspectService $prospects,
+    ) {}
 
     public function index(Project $project): AnonymousResourceCollection
     {
@@ -94,13 +100,9 @@ class PipelineStageController extends Controller
         return PipelineStageResource::collection($project->stages()->get());
     }
 
-    public function destroy(PipelineStage $stage): JsonResponse
+    public function destroy(Request $request, PipelineStage $stage): JsonResponse
     {
         $this->authorize('managePipeline', $stage->project);
-
-        // Le lot 4 ajoutera le refus si des prospects occupent l'étape, avec
-        // obligation de désigner une étape de repli. Rien à vérifier tant que
-        // les prospects n'existent pas.
 
         $restantes = $stage->project->stages()->count();
 
@@ -108,6 +110,48 @@ class PipelineStageController extends Controller
             throw ValidationException::withMessages([
                 'stage' => 'Un projet doit conserver au moins une étape : sans elle, aucun prospect ne pourrait y être créé.',
             ]);
+        }
+
+        $occupants = Prospect::query()->where('stage_id', $stage->id)->count();
+
+        if ($occupants > 0) {
+            // Une étape de repli est exigée plutôt qu'un déplacement d'office
+            // vers la première étape : ramener des prospects qualifiés au début
+            // du pipeline effacerait le travail déjà fait sur eux. Le choix
+            // revient à l'utilisateur.
+            $repli = $request->integer('fallback_stage_id');
+
+            if ($repli === 0) {
+                throw ValidationException::withMessages([
+                    'fallback_stage_id' => "Cette étape contient {$occupants} prospect".($occupants > 1 ? 's' : '').'. Indiquez vers quelle étape les déplacer.',
+                ]);
+            }
+
+            $destination = $stage->project->stages()->whereKey($repli)->first();
+
+            if ($destination === null || $destination->id === $stage->id) {
+                throw ValidationException::withMessages([
+                    'fallback_stage_id' => "L'étape de repli doit être une autre étape du même projet.",
+                ]);
+            }
+
+            DB::transaction(function () use ($stage, $destination) {
+                // Chaque déplacement est journalisé : sans cela, l'historique
+                // d'un prospect montrerait un saut inexpliqué, et les durées de
+                // cycle du lot 7 seraient calculées sur des étapes fantômes.
+                Prospect::query()
+                    ->where('stage_id', $stage->id)
+                    ->with('stage')
+                    ->chunkById(200, function ($prospects) use ($destination) {
+                        foreach ($prospects as $prospect) {
+                            $this->prospects->moveToStage($prospect, $destination);
+                        }
+                    });
+
+                $stage->delete();
+            });
+
+            return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
         }
 
         $stage->delete();

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Enums\CompanyStatus;
 use App\Enums\SubscriptionStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreCompanyRequest;
@@ -44,9 +45,19 @@ class CompanyController extends Controller
         // L'entreprise et son abonnement forment un tout : créer l'une sans
         // l'autre laisserait un tenant incapable de rien créer.
         $company = DB::transaction(function () use ($request) {
-            $company = Company::query()->create($request->safe()->only([
-                'name', 'slug', 'timezone', 'default_country_code',
-            ]));
+            // `status` est renseigné explicitement, alors que la colonne porte
+            // déjà cette valeur par défaut en base. Une valeur par défaut ne
+            // s'applique qu'à l'INSERT : l'instance en mémoire conservait un
+            // `status` nul, et CompanyResource, qui lit `status->value`, faisait
+            // échouer la réponse 201 sur un accès à une propriété de null. Le
+            // `load()` qui suit ne recharge que les relations, pas les
+            // attributs, et ne rattrapait donc rien.
+            $company = Company::query()->create([
+                ...$request->safe()->only([
+                    'name', 'slug', 'timezone', 'default_country_code',
+                ]),
+                'status' => CompanyStatus::Active,
+            ]);
 
             Subscription::query()->create([
                 'company_id' => $company->id,

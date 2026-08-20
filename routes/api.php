@@ -12,6 +12,9 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
 use App\Http\Controllers\Api\V1\PipelineStageController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\ProjectMemberController;
+use App\Http\Controllers\Api\V1\ProspectActionController;
+use App\Http\Controllers\Api\V1\ProspectController;
+use App\Http\Controllers\Api\V1\ProspectImportController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\VariantController;
 use Illuminate\Support\Facades\Route;
@@ -90,6 +93,26 @@ Route::prefix('v1')->group(function () {
             Route::patch('projects/{project}/stages/reorder', [PipelineStageController::class, 'reorder'])->name('projects.stages.reorder');
             Route::patch('stages/{stage}', [PipelineStageController::class, 'update'])->name('stages.update');
             Route::delete('stages/{stage}', [PipelineStageController::class, 'destroy'])->name('stages.destroy');
+
+            // Prospects. Les routes littérales précèdent celles paramétrées sur
+            // {prospect} : sans cela « import », « export », « duplicates » et
+            // « bulk-assign » seraient capturés comme des identifiants.
+            Route::post('prospects/import', [ProspectImportController::class, 'store'])->name('prospects.import');
+            Route::get('prospects/export', [ProspectImportController::class, 'export'])->name('prospects.export');
+            Route::get('prospects/duplicates', [ProspectController::class, 'duplicates'])->name('prospects.duplicates');
+            Route::patch('prospects/bulk-assign', [ProspectActionController::class, 'bulkAssign'])->name('prospects.bulk-assign');
+
+            Route::get('prospects', [ProspectController::class, 'index'])->name('prospects.index');
+            Route::post('prospects', [ProspectController::class, 'store'])->name('prospects.store');
+            Route::get('prospects/{prospect}', [ProspectController::class, 'show'])->name('prospects.show');
+            Route::patch('prospects/{prospect}', [ProspectController::class, 'update'])->name('prospects.update');
+            Route::delete('prospects/{prospect}', [ProspectController::class, 'destroy'])->name('prospects.destroy');
+
+            Route::patch('prospects/{prospect}/stage', [ProspectActionController::class, 'changeStage'])->name('prospects.stage');
+            Route::patch('prospects/{prospect}/assign', [ProspectActionController::class, 'assign'])->name('prospects.assign');
+            Route::patch('prospects/{prospect}/next-action', [ProspectActionController::class, 'planNextAction'])->name('prospects.next-action');
+            Route::post('prospects/{prospect}/notes', [ProspectActionController::class, 'addNote'])->name('prospects.notes.store');
+            Route::get('prospects/{prospect}/activities', [ProspectActionController::class, 'activities'])->name('prospects.activities');
         });
     });
 });

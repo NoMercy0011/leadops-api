@@ -25,12 +25,15 @@ final class PipelineService
      * être créé, faute d'étape d'entrée. La création d'un projet en pose donc
      * un d'office, quitte à ce qu'il soit intégralement remanié ensuite.
      *
-     * @var list<array{name: string, color: StageColor, is_won?: bool, is_lost?: bool}>
+     * @var list<array{name: string, color: StageColor, is_won?: bool, is_lost?: bool, is_qualified?: bool}>
      */
     private const DEFAULT_STAGES = [
         ['name' => 'Nouveau', 'color' => StageColor::Slate],
         ['name' => 'Contacté', 'color' => StageColor::Blue],
-        ['name' => 'Qualifié', 'color' => StageColor::Teal],
+        // Marquée qualifiante : c'est ce drapeau, et non son libellé, qui
+        // alimente le taux de qualification du §11. Le client reste libre de
+        // le déplacer sur une autre étape ou de le retirer.
+        ['name' => 'Qualifié', 'color' => StageColor::Teal, 'is_qualified' => true],
         ['name' => 'RDV', 'color' => StageColor::Violet],
         ['name' => 'Négociation', 'color' => StageColor::Amber],
         ['name' => 'Converti', 'color' => StageColor::Sage, 'is_won' => true],
@@ -49,6 +52,7 @@ final class PipelineService
                 'position' => $position++,
                 'is_won' => $stage['is_won'] ?? false,
                 'is_lost' => $stage['is_lost'] ?? false,
+                'is_qualified' => $stage['is_qualified'] ?? false,
                 'color' => $stage['color'],
             ]);
         }

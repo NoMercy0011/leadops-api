@@ -31,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $notes
  * @property CarbonInterface|null $next_action_at
  * @property string|null $next_action_note
+ * @property CarbonInterface|null $qualified_at
  * @property CarbonInterface|null $converted_at
  * @property CarbonInterface|null $lost_at
  * @property PipelineStage $stage
@@ -54,6 +55,7 @@ class Prospect extends Model
     {
         return [
             'next_action_at' => 'datetime',
+            'qualified_at' => 'datetime',
             'converted_at' => 'datetime',
             'lost_at' => 'datetime',
         ];

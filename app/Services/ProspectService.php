@@ -41,6 +41,8 @@ final class ProspectService
 
             $this->journal->created($prospect->load('stage'), $imported);
 
+            ReportingService::forgetCache($prospect->company_id);
+
             return $prospect;
         });
     }
@@ -81,6 +83,16 @@ final class ProspectService
                 $prospect->lost_at = now();
             }
 
+            // La qualification, elle, ne se défait jamais — contrairement aux
+            // deux jalons ci-dessus. Un prospect qualifié puis perdu a bel et
+            // bien été qualifié ; l'oublier ferait chuter le taux de
+            // qualification à mesure que les dossiers se closent, et
+            // l'indicateur mesurerait le stock restant plutôt que le travail
+            // accompli.
+            if ($stage->is_qualified && $prospect->qualified_at === null) {
+                $prospect->qualified_at = now();
+            }
+
             // Un retour en arrière depuis une étape terminale rouvre le
             // dossier : laisser les dates en place le ferait compter comme
             // converti *et* actif dans les rapports.
@@ -95,6 +107,11 @@ final class ProspectService
             $prospect->save();
 
             $this->journal->stageChanged($prospect, $ancienne, $stage);
+
+            // Le tableau de bord est servi depuis un cache court : sans cette
+            // purge, une conversion mettrait cinq minutes à s'y refléter — soit
+            // exactement le moment où l'utilisateur va le regarder.
+            ReportingService::forgetCache($prospect->company_id);
 
             return $prospect->fresh(['stage', 'assignedUser']);
         });

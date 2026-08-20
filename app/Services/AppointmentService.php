@@ -44,6 +44,9 @@ final class AppointmentService
 
             $this->journaliser($appointment, ActivityType::AppointmentScheduled);
 
+            // Le compteur « rendez-vous du jour » du tableau de bord change.
+            ReportingService::forgetCache($appointment->company_id);
+
             return $appointment;
         });
     }
@@ -74,6 +77,8 @@ final class AppointmentService
                     'from_label' => $ancienStatut->label(),
                 ]);
             }
+
+            ReportingService::forgetCache($appointment->company_id);
 
             return $appointment->fresh();
         });

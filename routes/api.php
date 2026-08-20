@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\V1\ProspectAnswerController;
 use App\Http\Controllers\Api\V1\ProspectController;
 use App\Http\Controllers\Api\V1\ProspectImportController;
 use App\Http\Controllers\Api\V1\QuestionController;
+use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\VariantController;
 use Illuminate\Support\Facades\Route;
@@ -120,6 +121,13 @@ Route::prefix('v1')->group(function () {
             // Questionnaire du prospect : définitions et réponses ensemble.
             Route::get('prospects/{prospect}/questionnaire', [ProspectAnswerController::class, 'show'])->name('prospects.questionnaire.show');
             Route::put('prospects/{prospect}/questionnaire', [ProspectAnswerController::class, 'store'])->name('prospects.questionnaire.store');
+
+            // Tableau de bord et rapports. `export` précède la route de
+            // listing pour rester lisible, l'ordre n'important pas ici —
+            // aucune n'est paramétrée.
+            Route::get('dashboard', [ReportController::class, 'dashboard'])->name('dashboard');
+            Route::get('reports/export', [ReportController::class, 'export'])->name('reports.export');
+            Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
 
             // Rendez-vous. `index` accepte une plage de journées locales,
             // convertie en bornes UTC par TimezoneResolver.

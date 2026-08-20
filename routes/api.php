@@ -9,7 +9,11 @@ use App\Http\Controllers\Api\V1\Auth\LoginController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\MeController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
+use App\Http\Controllers\Api\V1\PipelineStageController;
+use App\Http\Controllers\Api\V1\ProjectController;
+use App\Http\Controllers\Api\V1\ProjectMemberController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\VariantController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -62,6 +66,30 @@ Route::prefix('v1')->group(function () {
         Route::middleware('subscription.writes')->group(function () {
             Route::get('users', [UserController::class, 'index'])->name('users.index');
             Route::post('users', [UserController::class, 'store'])->name('users.store');
+
+            // Variantes — vocabulaire de reporting propre à l'entreprise.
+            Route::get('variants', [VariantController::class, 'index'])->name('variants.index');
+            Route::post('variants', [VariantController::class, 'store'])->name('variants.store');
+            Route::patch('variants/{variant}', [VariantController::class, 'update'])->name('variants.update');
+            Route::delete('variants/{variant}', [VariantController::class, 'destroy'])->name('variants.destroy');
+
+            Route::get('projects', [ProjectController::class, 'index'])->name('projects.index');
+            Route::post('projects', [ProjectController::class, 'store'])->name('projects.store');
+            Route::get('projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
+            Route::patch('projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
+            Route::delete('projects/{project}', [ProjectController::class, 'destroy'])->name('projects.destroy');
+
+            Route::get('projects/{project}/members', [ProjectMemberController::class, 'index'])->name('projects.members.index');
+            Route::put('projects/{project}/members', [ProjectMemberController::class, 'sync'])->name('projects.members.sync');
+
+            // Étapes de pipeline. Le réordonnancement est déclaré avant la
+            // route paramétrée sur {stage} : sans cela « reorder » serait
+            // capturé comme un identifiant d'étape.
+            Route::get('projects/{project}/stages', [PipelineStageController::class, 'index'])->name('projects.stages.index');
+            Route::post('projects/{project}/stages', [PipelineStageController::class, 'store'])->name('projects.stages.store');
+            Route::patch('projects/{project}/stages/reorder', [PipelineStageController::class, 'reorder'])->name('projects.stages.reorder');
+            Route::patch('stages/{stage}', [PipelineStageController::class, 'update'])->name('stages.update');
+            Route::delete('stages/{stage}', [PipelineStageController::class, 'destroy'])->name('stages.destroy');
         });
     });
 });

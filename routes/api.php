@@ -13,8 +13,10 @@ use App\Http\Controllers\Api\V1\PipelineStageController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\ProjectMemberController;
 use App\Http\Controllers\Api\V1\ProspectActionController;
+use App\Http\Controllers\Api\V1\ProspectAnswerController;
 use App\Http\Controllers\Api\V1\ProspectController;
 use App\Http\Controllers\Api\V1\ProspectImportController;
+use App\Http\Controllers\Api\V1\QuestionController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\VariantController;
 use Illuminate\Support\Facades\Route;
@@ -113,6 +115,18 @@ Route::prefix('v1')->group(function () {
             Route::patch('prospects/{prospect}/next-action', [ProspectActionController::class, 'planNextAction'])->name('prospects.next-action');
             Route::post('prospects/{prospect}/notes', [ProspectActionController::class, 'addNote'])->name('prospects.notes.store');
             Route::get('prospects/{prospect}/activities', [ProspectActionController::class, 'activities'])->name('prospects.activities');
+
+            // Questionnaire du prospect : définitions et réponses ensemble.
+            Route::get('prospects/{prospect}/questionnaire', [ProspectAnswerController::class, 'show'])->name('prospects.questionnaire.show');
+            Route::put('prospects/{prospect}/questionnaire', [ProspectAnswerController::class, 'store'])->name('prospects.questionnaire.store');
+
+            // Constructeur de questionnaire. `reorder` précède la route
+            // paramétrée sur {question}, qui le capturerait sinon.
+            Route::get('projects/{project}/questions', [QuestionController::class, 'index'])->name('projects.questions.index');
+            Route::post('projects/{project}/questions', [QuestionController::class, 'store'])->name('projects.questions.store');
+            Route::patch('projects/{project}/questions/reorder', [QuestionController::class, 'reorder'])->name('projects.questions.reorder');
+            Route::patch('questions/{question}', [QuestionController::class, 'update'])->name('questions.update');
+            Route::delete('questions/{question}', [QuestionController::class, 'destroy'])->name('questions.destroy');
         });
     });
 });

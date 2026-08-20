@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\Admin\CompanyStatusController;
 use App\Http\Controllers\Api\V1\Admin\CompanyUsageController;
 use App\Http\Controllers\Api\V1\Admin\PlanController;
 use App\Http\Controllers\Api\V1\Admin\SubscriptionController;
+use App\Http\Controllers\Api\V1\AppointmentController;
 use App\Http\Controllers\Api\V1\Auth\LoginController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\MeController;
@@ -119,6 +120,14 @@ Route::prefix('v1')->group(function () {
             // Questionnaire du prospect : définitions et réponses ensemble.
             Route::get('prospects/{prospect}/questionnaire', [ProspectAnswerController::class, 'show'])->name('prospects.questionnaire.show');
             Route::put('prospects/{prospect}/questionnaire', [ProspectAnswerController::class, 'store'])->name('prospects.questionnaire.store');
+
+            // Rendez-vous. `index` accepte une plage de journées locales,
+            // convertie en bornes UTC par TimezoneResolver.
+            Route::get('appointments', [AppointmentController::class, 'index'])->name('appointments.index');
+            Route::post('appointments', [AppointmentController::class, 'store'])->name('appointments.store');
+            Route::get('appointments/{appointment}', [AppointmentController::class, 'show'])->name('appointments.show');
+            Route::patch('appointments/{appointment}', [AppointmentController::class, 'update'])->name('appointments.update');
+            Route::delete('appointments/{appointment}', [AppointmentController::class, 'destroy'])->name('appointments.destroy');
 
             // Constructeur de questionnaire. `reorder` précède la route
             // paramétrée sur {question}, qui le capturerait sinon.

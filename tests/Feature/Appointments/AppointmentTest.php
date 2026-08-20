@@ -235,6 +235,35 @@ class AppointmentTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_le_filtre_par_prospect_ignore_les_bornes_temporelles(): void
+    {
+        $autre = Prospect::factory()->forProject($this->project)->create();
+
+        // Un rendez-vous très ancien et un très lointain : la fiche d'un
+        // prospect doit montrer tout son historique, alors qu'une plage par
+        // défaut les écarterait tous les deux.
+        $ancien = Appointment::factory()->forProspect($this->prospect)->at('2020-01-15 09:00:00')->create();
+        $lointain = Appointment::factory()->forProspect($this->prospect)->at('2030-06-10 09:00:00')->create();
+        Appointment::factory()->forProspect($autre)->create();
+
+        $this->actingAs($this->admin)
+            ->getJson("/api/v1/appointments?prospect_id={$this->prospect->id}")
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        // Sans le filtre, la plage par défaut écarte les deux extrêmes.
+        // L'assertion porte sur leur absence et non sur un décompte, qui
+        // dépendrait de la date d'exécution du test.
+        $sansFiltre = $this->actingAs($this->admin)
+            ->getJson('/api/v1/appointments')
+            ->assertOk();
+
+        $ids = array_column($sansFiltre->json('data'), 'id');
+
+        $this->assertNotContains($ancien->id, $ids);
+        $this->assertNotContains($lointain->id, $ids);
+    }
+
     public function test_le_super_admin_n_accede_pas_a_l_agenda_commercial(): void
     {
         Appointment::factory()->forProspect($this->prospect)->create();

@@ -19,6 +19,9 @@ enum ActivityType: string
     case Imported = 'imported';
     case NextActionPlanned = 'next_action_planned';
     case FieldsUpdated = 'fields_updated';
+    case AppointmentScheduled = 'appointment_scheduled';
+    case AppointmentRescheduled = 'appointment_rescheduled';
+    case AppointmentStatusChanged = 'appointment_status_changed';
 
     public function label(): string
     {
@@ -31,6 +34,9 @@ enum ActivityType: string
             self::Imported => 'Importé',
             self::NextActionPlanned => 'Relance planifiée',
             self::FieldsUpdated => 'Fiche modifiée',
+            self::AppointmentScheduled => 'Rendez-vous planifié',
+            self::AppointmentRescheduled => 'Rendez-vous déplacé',
+            self::AppointmentStatusChanged => 'Rendez-vous mis à jour',
         };
     }
 
@@ -44,7 +50,9 @@ enum ActivityType: string
     public function isInteraction(): bool
     {
         return match ($this) {
-            self::StageChanged, self::NoteAdded, self::NextActionPlanned => true,
+            self::StageChanged, self::NoteAdded, self::NextActionPlanned,
+            self::AppointmentScheduled, self::AppointmentRescheduled,
+            self::AppointmentStatusChanged => true,
             default => false,
         };
     }

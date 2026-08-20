@@ -2,9 +2,12 @@
 
 namespace Database\Seeders;
 
+use App\Enums\AppointmentStatus;
+use App\Enums\AppointmentType;
 use App\Enums\ProjectStatus;
 use App\Enums\SubscriptionStatus;
 use App\Enums\UserRole;
+use App\Models\Appointment;
 use App\Models\Company;
 use App\Models\Plan;
 use App\Models\Project;
@@ -171,7 +174,44 @@ class DatabaseSeeder extends Seeder
             if ($index % 3 === 0) {
                 app(ActivityLogger::class)->noteAdded($prospect, 'Premier contact établi, à recontacter.');
             }
+
+            // Un prospect sur trois a un rendez-vous, réparti entre passé et
+            // futur et couvrant les quatre statuts : un calendrier dont tous
+            // les rendez-vous sont identiques ne permet pas de juger l'écran.
+            if ($index % 3 === 1) {
+                $this->creerRendezVous($prospect, $index);
+            }
         }
+    }
+
+    private function creerRendezVous(Prospect $prospect, int $index): void
+    {
+        $statuts = [
+            AppointmentStatus::Planned,
+            AppointmentStatus::Completed,
+            AppointmentStatus::Cancelled,
+            AppointmentStatus::NoShow,
+        ];
+
+        $statut = $statuts[intdiv($index, 3) % 4];
+
+        // Les rendez-vous clos sont dans le passé, les planifiés à venir :
+        // l'inverse produirait des états incohérents à l'écran.
+        $quand = $statut === AppointmentStatus::Planned
+            ? now()->addDays(1 + $index % 10)->setTime(9 + $index % 8, 0)
+            : now()->subDays(1 + $index % 10)->setTime(9 + $index % 8, 0);
+
+        Appointment::query()->create([
+            'company_id' => $prospect->company_id,
+            'project_id' => $prospect->project_id,
+            'prospect_id' => $prospect->id,
+            'user_id' => $prospect->assigned_user_id,
+            'scheduled_at' => $quand,
+            'duration_minutes' => [30, 45, 60][$index % 3],
+            'type' => [AppointmentType::Phone, AppointmentType::Video, AppointmentType::OnSite][$index % 3],
+            'status' => $statut,
+            'location' => $index % 3 === 2 ? 'Antananarivo, Analakely' : null,
+        ]);
     }
 
     private function creerUtilisateur(int $companyId, string $nom, string $email, UserRole $role, ?int $managerId = null): User

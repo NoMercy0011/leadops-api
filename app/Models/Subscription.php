@@ -26,6 +26,16 @@ class Subscription extends Model
     use HasFactory;
 
     /**
+     * Même raison que sur Company : le défaut de colonne ne renseigne pas
+     * l'instance en mémoire.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'status' => SubscriptionStatus::Active->value,
+    ];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

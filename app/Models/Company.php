@@ -33,6 +33,18 @@ class Company extends Model
     use HasFactory;
 
     /**
+     * Valeur par défaut portée aussi par le modèle, et pas seulement par la
+     * colonne. Un défaut défini en base n'est appliqué qu'à l'insertion :
+     * l'instance en mémoire garde un `status` nul, et toute sérialisation
+     * faite dans la foulée d'une création échoue.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'status' => CompanyStatus::Active->value,
+    ];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

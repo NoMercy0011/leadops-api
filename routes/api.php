@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
 use App\Http\Controllers\Api\V1\DataQualityController;
 use App\Http\Controllers\Api\V1\PipelineHealthController;
 use App\Http\Controllers\Api\V1\PipelineStageController;
+use App\Http\Controllers\Api\V1\ProjectActivityController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\ProjectMemberController;
 use App\Http\Controllers\Api\V1\ProspectActionController;
@@ -22,6 +23,7 @@ use App\Http\Controllers\Api\V1\ProspectImportController;
 use App\Http\Controllers\Api\V1\QuestionController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\VariantComparisonController;
 use App\Http\Controllers\Api\V1\VariantController;
 use Illuminate\Support\Facades\Route;
 
@@ -96,6 +98,10 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
                 ->name('projects.pipeline-health');
             Route::get('projects/{project}/data-quality', DataQualityController::class)
                 ->name('projects.data-quality');
+            Route::get('projects/{project}/activities', ProjectActivityController::class)
+                ->name('projects.activities');
+            Route::get('projects/{project}/variant-comparison', VariantComparisonController::class)
+                ->name('projects.variant-comparison');
 
             Route::get('projects/{project}/members', [ProjectMemberController::class, 'index'])->name('projects.members.index');
             Route::put('projects/{project}/members', [ProjectMemberController::class, 'sync'])->name('projects.members.sync');

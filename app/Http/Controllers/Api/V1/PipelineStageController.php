@@ -9,6 +9,7 @@ use App\Models\PipelineStage;
 use App\Models\Project;
 use App\Models\Prospect;
 use App\Services\PipelineService;
+use App\Services\ProjectJournal;
 use App\Services\ProspectService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class PipelineStageController extends Controller
     public function __construct(
         private readonly PipelineService $pipeline,
         private readonly ProspectService $prospects,
+        private readonly ProjectJournal $journal,
     ) {}
 
     public function index(Project $project): AnonymousResourceCollection
@@ -55,6 +57,8 @@ class PipelineStageController extends Controller
             'position' => $this->pipeline->nextPosition($project),
         ]);
 
+        $this->journal->stageAdded($stage);
+
         return (new PipelineStageResource($stage))
             ->response()
             ->setStatusCode(JsonResponse::HTTP_CREATED);
@@ -80,7 +84,14 @@ class PipelineStageController extends Controller
 
         $this->assertTerminalitéCohérente($project, $donnees, $stage);
 
+        // Le libellé est relevé avant la modification : c'est le renommage qui
+        // change rétroactivement le sens des données déjà saisies, et le
+        // journal doit pouvoir dire de quoi vers quoi.
+        $ancienNom = $stage->name;
+
         $stage->update($donnees);
+
+        $this->journal->stageUpdated($stage->fresh(), $ancienNom);
 
         return new PipelineStageResource($stage->fresh());
     }
@@ -98,6 +109,8 @@ class PipelineStageController extends Controller
         ]);
 
         $this->pipeline->reorder($project, $donnees['stages']);
+
+        $this->journal->stagesReordered($project->fresh());
 
         return PipelineStageResource::collection($project->stages()->get());
     }
@@ -153,10 +166,17 @@ class PipelineStageController extends Controller
                 $stage->delete();
             });
 
+            $this->journal->stageRemoved($stage->project, $stage->name, $destination->name);
+
             return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
         }
 
+        $projet = $stage->project;
+        $nom = $stage->name;
+
         $stage->delete();
+
+        $this->journal->stageRemoved($projet, $nom, null);
 
         return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
     }

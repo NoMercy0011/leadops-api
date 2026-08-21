@@ -8,6 +8,7 @@ use App\Http\Requests\StoreProjectRequest;
 use App\Http\Resources\ProjectResource;
 use App\Models\Project;
 use App\Services\PipelineService;
+use App\Services\ProjectJournal;
 use App\Services\SubscriptionLimitService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,6 +21,7 @@ class ProjectController extends Controller
     public function __construct(
         private readonly SubscriptionLimitService $limits,
         private readonly PipelineService $pipeline,
+        private readonly ProjectJournal $journal,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -75,6 +77,8 @@ class ProjectController extends Controller
                 $project->members()->sync($request->input('member_ids', []));
             }
 
+            $this->journal->projectCreated($project);
+
             return $project;
         });
 
@@ -115,7 +119,27 @@ class ProjectController extends Controller
             'status' => ['sometimes', Rule::enum(ProjectStatus::class)],
         ]);
 
+        // Le changement de statut est journalisé à part : « archivé » et
+        // « renommé » n'appellent pas la même lecture, et les mêler dans un
+        // seul événement obligerait l'écran à fouiller le payload.
+        $ancienStatut = $project->status;
+        $avant = $project->only(['name', 'product', 'target', 'description', 'variant_id']);
+
         $project->update($donnees);
+
+        if (array_key_exists('status', $donnees) && $project->status !== $ancienStatut) {
+            $this->journal->statusChanged(
+                $project,
+                $ancienStatut->label(),
+                $project->status->label(),
+            );
+        }
+
+        $this->journal->projectUpdated(
+            $project,
+            $avant,
+            $project->only(['name', 'product', 'target', 'description', 'variant_id']),
+        );
 
         return new ProjectResource($project->load(['variant', 'stages', 'members']));
     }

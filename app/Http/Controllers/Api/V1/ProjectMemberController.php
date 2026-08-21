@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\Project;
+use App\Services\ProjectJournal;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Validation\Rule;
@@ -26,6 +27,10 @@ class ProjectMemberController extends Controller
      * l'utilisateur voit à l'écran. Un `attach` obligerait le front à calculer
      * lui-même les retraits, avec le risque d'oubli que cela comporte.
      */
+    public function __construct(
+        private readonly ProjectJournal $journal,
+    ) {}
+
     public function sync(Request $request, Project $project): AnonymousResourceCollection
     {
         $this->authorize('manageMembers', $project);
@@ -40,7 +45,18 @@ class ProjectMemberController extends Controller
             ],
         ]);
 
+        // Les noms sont relevés avant et après : le journal doit rester
+        // lisible même après le départ d'un compte, et un identifiant seul ne
+        // dirait plus rien.
+        $avant = $project->members()->pluck('name')->all();
+
         $project->members()->sync($donnees['member_ids']);
+
+        $this->journal->membersChanged(
+            $project,
+            $avant,
+            $project->members()->pluck('name')->all(),
+        );
 
         return UserResource::collection($project->members()->orderBy('name')->get());
     }

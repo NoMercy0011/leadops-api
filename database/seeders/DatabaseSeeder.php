@@ -12,12 +12,14 @@ use App\Models\Company;
 use App\Models\Plan;
 use App\Models\Project;
 use App\Models\Prospect;
+use App\Models\ProspectAnswer;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Models\Variant;
 use App\Services\ActivityLogger;
 use App\Services\PipelineService;
 use App\Services\ProspectService;
+use App\Services\QuestionnaireService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -124,6 +126,9 @@ class DatabaseSeeder extends Seeder
 
             $projet->members()->sync(collect($commerciaux)->pluck('id')->all());
 
+            // Avant les prospects : ce sont eux qui y répondent.
+            $this->creerQuestionnaire($projet);
+
             $this->creerProspects($projet->fresh(), $commerciaux);
         }
     }
@@ -188,31 +193,188 @@ class DatabaseSeeder extends Seeder
                 app(ProspectService::class)->moveToStage($prospect, $etapes->firstWhere('is_qualified', true));
             }
 
-            // Un prospect sur trois a un rendez-vous, réparti entre passé et
-            // futur et couvrant les quatre statuts : un calendrier dont tous
-            // les rendez-vous sont identiques ne permet pas de juger l'écran.
-            if ($index % 3 === 1) {
+            $this->repondreAuQuestionnaire($prospect, $index);
+
+            // Prochaine action : sans elle, la tuile « À relancer » de la liste
+            // des prospects et sa colonne « Prochaine action » restent vides,
+            // alors que c'est la donnée qui dit quoi faire de la journée. Un
+            // dossier sur quatre est volontairement en retard.
+            if ($index % 2 === 0 && $prospect->converted_at === null && $prospect->lost_at === null) {
+                $prospect->forceFill([
+                    'next_action_at' => $index % 4 === 0
+                        ? now()->subDays(1 + $index % 5)->setTime(9, 0)
+                        : now()->addDays(1 + $index % 7)->setTime(14, 0),
+                    'next_action_note' => $index % 4 === 0
+                        ? 'Relancer, sans réponse au dernier appel.'
+                        : 'Envoyer la proposition chiffrée.',
+                ])->save();
+            }
+
+            // Un prospect sur deux a un rendez-vous. La rotation ci-dessous
+            // couvre les quatre statuts *et* laisse plusieurs planifiés à
+            // venir : un calendrier dont tous les rendez-vous sont identiques
+            // ne permet pas de juger l'écran.
+            if ($index % 2 === 1) {
                 $this->creerRendezVous($prospect, $index);
             }
         }
     }
 
+    /**
+     * Questionnaire de qualification du projet.
+     *
+     * Sans lui, un seed neuf laisse le constructeur vide et la fiche prospect
+     * sur son écran « aucune question » : tout le lot 5 devient indémontrable,
+     * et la barre de progression de la qualification n'a rien à mesurer.
+     *
+     * Les types couverts vont du plus simple au plus structurant — un champ
+     * texte, un nombre, une liste fermée, un choix multiple, une case à
+     * cocher — parce que c'est la variété, et non le nombre, qui permet de
+     * juger le moteur de rendu générique.
+     */
+    private function creerQuestionnaire(Project $projet): void
+    {
+        $service = app(QuestionnaireService::class);
+
+        $questions = [
+            [
+                'type' => 'single_choice',
+                'label' => 'Situation familiale',
+                'help' => 'Telle que déclarée par le prospect.',
+                'required' => true,
+                'options' => [
+                    ['label' => 'Célibataire'],
+                    ['label' => 'Marié'],
+                    ['label' => 'Divorcé'],
+                    ['label' => 'Veuf'],
+                ],
+            ],
+            [
+                'type' => 'number',
+                'label' => 'Revenu mensuel (Ar)',
+                'required' => true,
+            ],
+            [
+                'type' => 'multiple_choice',
+                'label' => 'Garanties souhaitées',
+                'required' => false,
+                'options' => [
+                    ['label' => 'Hospitalisation'],
+                    ['label' => 'Optique'],
+                    ['label' => 'Dentaire'],
+                ],
+            ],
+            [
+                'type' => 'yes_no',
+                'label' => 'Déjà couvert par un autre contrat',
+                'required' => true,
+            ],
+            [
+                'type' => 'long_text',
+                'label' => 'Contexte et besoins exprimés',
+                'required' => false,
+            ],
+        ];
+
+        foreach ($questions as $definition) {
+            $service->createQuestion($projet, $definition);
+        }
+    }
+
+    /**
+     * Réponses partielles, et c'est le point.
+     *
+     * Un questionnaire entièrement rempli et un questionnaire vide donnent
+     * deux écrans également inintéressants. Les dossiers laissés incomplets
+     * sont ceux qui font apparaître la dominante « réponses obligatoires
+     * manquantes » et le repère « à renseigner » sur les champs concernés.
+     */
+    private function repondreAuQuestionnaire(Prospect $prospect, int $index): void
+    {
+        $service = app(QuestionnaireService::class);
+        $questions = $service->questionsFor($prospect->project)->keyBy('type');
+
+        $famille = $questions->get('single_choice');
+        $revenu = $questions->get('number');
+        $garanties = $questions->get('multiple_choice');
+        $couvert = $questions->get('yes_no');
+
+        $reponses = [];
+
+        if ($famille !== null) {
+            $choix = $famille->options->get($index % max(1, $famille->options->count()));
+            $reponses[$famille->id] = $choix?->value;
+        }
+
+        // Un dossier sur trois laisse le revenu de côté : c'est une question
+        // obligatoire, donc celle qui rend la qualification incomplète.
+        if ($revenu !== null && $index % 3 !== 1) {
+            $reponses[$revenu->id] = 450000 + $index * 125000;
+        }
+
+        if ($garanties !== null && $index % 2 === 0) {
+            $reponses[$garanties->id] = $garanties->options
+                ->take(1 + $index % 3)
+                ->pluck('value')
+                ->all();
+        }
+
+        if ($couvert !== null) {
+            $reponses[$couvert->id] = $index % 4 === 0;
+        }
+
+        if ($reponses === []) {
+            return;
+        }
+
+        // Les réponses partielles ne passent pas la validation, qui exige les
+        // obligatoires : on écrit donc sans elle, ce que le seeder peut se
+        // permettre là où un contrôleur ne le pourrait jamais.
+        foreach ($reponses as $questionId => $valeur) {
+            ProspectAnswer::query()->updateOrCreate(
+                ['prospect_id' => $prospect->id, 'question_id' => $questionId],
+                ['company_id' => $prospect->company_id, 'value' => $valeur],
+            );
+        }
+    }
+
     private function creerRendezVous(Prospect $prospect, int $index): void
     {
+        // « Planifié » revient trois fois sur six : une seule occurrence
+        // laisserait le choix entre un rendez-vous en retard et un rendez-vous
+        // à venir, jamais les deux — et l'une des deux tuiles resterait vide.
         $statuts = [
             AppointmentStatus::Planned,
             AppointmentStatus::Completed,
+            AppointmentStatus::Planned,
             AppointmentStatus::Cancelled,
             AppointmentStatus::NoShow,
+            AppointmentStatus::Planned,
         ];
 
-        $statut = $statuts[intdiv($index, 3) % 4];
+        $rang = intdiv($index, 2) % count($statuts);
+        $statut = $statuts[$rang];
 
-        // Les rendez-vous clos sont dans le passé, les planifiés à venir :
-        // l'inverse produirait des états incohérents à l'écran.
-        $quand = $statut === AppointmentStatus::Planned
-            ? now()->addDays(1 + $index % 10)->setTime(9 + $index % 8, 0)
-            : now()->subDays(1 + $index % 10)->setTime(9 + $index % 8, 0);
+        // Un rendez-vous planifié dont l'heure est passée n'est pas un état
+        // incohérent : c'est le cas le plus courant en pratique — il a eu lieu
+        // et personne ne l'a clôturé. C'est aussi la tuile dominante du
+        // calendrier et du tableau de bord, qui resterait à zéro sans lui.
+        // Seul le premier des trois planifiés l'est, les autres restent à venir.
+        $enRetard = $rang === 0;
+
+        // Le dernier planifié tombe aujourd'hui : sans lui, la tuile
+        // « Rendez-vous du jour » du tableau de bord reste vide quel que soit
+        // le jeu de données, et personne ne peut juger l'écran.
+        $aujourdhui = $rang === count($statuts) - 1;
+
+        // Hors ces deux cas, les rendez-vous clos sont dans le passé et les
+        // planifiés à venir : l'inverse produirait des états incohérents.
+        $quand = match (true) {
+            $aujourdhui => now()->setTime(16, 0),
+            $statut === AppointmentStatus::Planned && ! $enRetard => now()
+                ->addDays(1 + $index % 10)->setTime(9 + $index % 8, 0),
+            default => now()->subDays(1 + $index % 10)->setTime(9 + $index % 8, 0),
+        };
 
         Appointment::query()->create([
             'company_id' => $prospect->company_id,

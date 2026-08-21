@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Prospect;
 use App\Services\ProspectService;
 use App\Services\SubscriptionLimitService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -25,13 +26,37 @@ class ProspectController extends Controller
     {
         $this->authorize('viewAny', Prospect::class);
 
-        $prospects = Prospect::query()
-            // Deux couches : CompanyScope borne à l'entreprise, `visibleTo`
-            // applique ensuite la restriction de rôle.
-            ->visibleTo($request->user())
+        $prospects = $this->filtree($request)
             ->with(['stage', 'assignedUser'])
             // Dernière interaction dérivée du journal plutôt que stockée.
             ->withMax('activities', 'occurred_at')
+            ->orderByDesc('updated_at')
+            ->paginate((int) $request->integer('per_page', 25))
+            ->withQueryString();
+
+        // Le résumé porte sur le filtre entier, pas sur la page affichée :
+        // « 12 relances en retard » n'a de sens que rapporté à l'ensemble.
+        // Le calculer côté front sur `data` donnerait un compte faux dès la
+        // seconde page.
+        return ProspectResource::collection($prospects)
+            ->additional(['summary' => $this->resume($request)]);
+    }
+
+    /**
+     * Requête de base : cloisonnement, périmètre de rôle et filtres de l'URL.
+     *
+     * Partagée par la liste et par son résumé, pour que les deux portent
+     * exactement sur le même ensemble. Deux constructions séparées finiraient
+     * par diverger, et le résumé mentirait sans que rien ne le signale.
+     *
+     * @return Builder<Prospect>
+     */
+    private function filtree(Request $request): Builder
+    {
+        return Prospect::query()
+            // Deux couches : CompanyScope borne à l'entreprise, `visibleTo`
+            // applique ensuite la restriction de rôle.
+            ->visibleTo($request->user())
             ->when(
                 $request->integer('project_id'),
                 fn ($q, int $id) => $q->where('project_id', $id)
@@ -61,12 +86,46 @@ class ProspectController extends Controller
                         ->orWhere('phone', 'like', "%{$terme}%")
                         ->orWhere('email', 'like', "%{$terme}%");
                 })
-            )
-            ->orderByDesc('updated_at')
-            ->paginate((int) $request->integer('per_page', 25))
-            ->withQueryString();
+            );
+    }
 
-        return ProspectResource::collection($prospects);
+    /**
+     * Compteurs d'en-tête de liste.
+     *
+     * Une seule requête à agrégats conditionnels plutôt que cinq `count()` :
+     * la table des prospects est la plus volumineuse du produit (plafond
+     * Enterprise illimité), et cet écran est le plus consulté.
+     *
+     * « En retard » exclut les prospects convertis ou perdus : une relance
+     * planifiée sur un dossier clos n'appelle plus aucune action, et la
+     * compter gonflerait indéfiniment un indicateur censé appeler à agir.
+     *
+     * @return array<string, int>
+     */
+    private function resume(Request $request): array
+    {
+        $ligne = $this->filtree($request)
+            ->selectRaw(<<<'SQL'
+                count(*) as total,
+                sum(case when assigned_user_id is null then 1 else 0 end) as non_affectes,
+                sum(case when converted_at is not null then 1 else 0 end) as convertis,
+                sum(case when lost_at is not null then 1 else 0 end) as perdus,
+                sum(case
+                    when next_action_at is not null
+                     and next_action_at < ?
+                     and converted_at is null
+                     and lost_at is null
+                    then 1 else 0 end) as en_retard
+            SQL, [now()])
+            ->first();
+
+        return [
+            'total' => (int) ($ligne->total ?? 0),
+            'non_affectes' => (int) ($ligne->non_affectes ?? 0),
+            'convertis' => (int) ($ligne->convertis ?? 0),
+            'perdus' => (int) ($ligne->perdus ?? 0),
+            'en_retard' => (int) ($ligne->en_retard ?? 0),
+        ];
     }
 
     public function store(StoreProspectRequest $request): JsonResponse

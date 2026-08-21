@@ -34,7 +34,14 @@ class ProjectController extends Controller
             ->withCount('members')
             ->when(
                 $request->string('status')->value(),
-                fn ($query, string $statut) => $query->where('status', $statut)
+                // Un statut demandé explicitement fait autorité, archivé
+                // compris : c'est ainsi qu'on retrouve ce qu'on a rangé.
+                fn ($query, string $statut) => $query->where('status', $statut),
+                // Sans filtre, les projets archivés sont écartés. C'est tout
+                // l'objet de l'archivage : sortir de la vue courante sans
+                // rien détruire. Les afficher malgré tout viderait le geste
+                // de son sens.
+                fn ($query) => $query->whereIn('status', ProjectStatus::visibleParDefaut()),
             )
             ->when(
                 $request->integer('variant_id'),
@@ -113,12 +120,19 @@ class ProjectController extends Controller
         return new ProjectResource($project->load(['variant', 'stages', 'members']));
     }
 
-    public function destroy(Project $project): JsonResponse
-    {
-        $this->authorize('delete', $project);
-
-        $project->delete();
-
-        return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
-    }
+    /*
+     * Il n'y a volontairement pas de `destroy`.
+     *
+     * Les clés étrangères de `prospects`, `pipeline_stages` et `appointments`
+     * sont en `cascadeOnDelete` : supprimer un projet emporterait ses
+     * prospects, leur journal d'activités et tous leurs rendez-vous d'un seul
+     * appel, sans retour possible — et les KPIs de durée de cycle qui en
+     * dépendent ne se reconstituent pas.
+     *
+     * Un projet se retire donc de la circulation par son statut : « Terminé »
+     * quand il est mené à son terme, « Archivé » quand on veut simplement le
+     * sortir de la vue courante. Les deux conservent tout et restent
+     * consultables et exportables — la même asymétrie que pour un abonnement
+     * suspendu, où l'on ferme l'écriture sans jamais fermer la lecture.
+     */
 }

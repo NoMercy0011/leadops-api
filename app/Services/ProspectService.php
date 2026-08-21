@@ -28,6 +28,22 @@ final class ProspectService
      */
     public function create(Project $project, array $donnees, bool $imported = false): Prospect
     {
+        // `acceptsNewProspects()` n'était lu que par la Resource : la fiche
+        // projet annonçait « ce projet n'accepte plus de nouveaux prospects »
+        // alors que l'API les acceptait toujours. Le front revendiquait donc
+        // une règle qui n'existait pas — l'inverse exact de l'invariant, où
+        // c'est l'API qui tranche et le front qui informe.
+        //
+        // La garde est ici plutôt que dans le contrôleur : la création passe
+        // aussi par l'import CSV, et deux points d'entrée finiraient par
+        // diverger.
+        if (! $project->status->acceptsNewProspects()) {
+            throw ValidationException::withMessages([
+                'project_id' => "Le projet « {$project->name} » est {$project->status->label()} ".
+                    "et n'accepte plus de nouveaux prospects. Réactivez-le pour en ajouter.",
+            ]);
+        }
+
         return DB::transaction(function () use ($project, $donnees, $imported) {
             $prospect = new Prospect($donnees);
 

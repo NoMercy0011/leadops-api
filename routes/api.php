@@ -87,7 +87,8 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('projects', [ProjectController::class, 'store'])->name('projects.store');
             Route::get('projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
             Route::patch('projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
-            Route::delete('projects/{project}', [ProjectController::class, 'destroy'])->name('projects.destroy');
+            // Pas de route de suppression : un projet s'archive, il ne se
+            // supprime pas. Le pourquoi est dans ProjectController.
 
             Route::get('projects/{project}/members', [ProjectMemberController::class, 'index'])->name('projects.members.index');
             Route::put('projects/{project}/members', [ProjectMemberController::class, 'sync'])->name('projects.members.sync');

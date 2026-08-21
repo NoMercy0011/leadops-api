@@ -70,6 +70,20 @@ class Project extends Model
     }
 
     /**
+     * Prospects du projet.
+     *
+     * Sert à compter avant une suppression : la clé étrangère est en
+     * `cascadeOnDelete`, et supprimer un projet peuplé emporterait ses
+     * prospects, leur journal et leurs rendez-vous.
+     *
+     * @return HasMany<Prospect, $this>
+     */
+    public function prospects(): HasMany
+    {
+        return $this->hasMany(Prospect::class);
+    }
+
+    /**
      * Commerciaux affectés au projet.
      *
      * @return BelongsToMany<User, $this>

@@ -59,6 +59,40 @@ class ProspectArchiveTest extends TestCase
             ->assertJsonPath('data.is_archived', $archive);
     }
 
+    /**
+     * Lignes de santé du pipeline, une par étape.
+     *
+     * `json()` renvoie `mixed` : le passer directement à `collect()` laisse
+     * ses paramètres de type irrésolus. La forme est connue du contrat d'API,
+     * elle est donc déclarée ici une fois plutôt qu'à chaque appel.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function santeDuPipeline(): array
+    {
+        /** @var list<array<string, mixed>> $etapes */
+        $etapes = $this->actingAs($this->admin)
+            ->getJson("/api/v1/projects/{$this->projet->id}/pipeline-health")
+            ->assertOk()
+            ->json('data.stages');
+
+        return $etapes;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function journalDe(Prospect $prospect): array
+    {
+        /** @var list<array<string, mixed>> $lignes */
+        $lignes = $this->actingAs($this->admin)
+            ->getJson("/api/v1/prospects/{$prospect->id}/activities")
+            ->assertOk()
+            ->json('data');
+
+        return $lignes;
+    }
+
     public function test_un_prospect_archive_quitte_la_liste_et_le_resume(): void
     {
         $prospects = Prospect::factory()->forProject($this->projet)->count(3)->create();
@@ -133,12 +167,8 @@ class ProspectArchiveTest extends TestCase
 
         $this->archiver($prospects[0]);
 
-        $sante = $this->actingAs($this->admin)
-            ->getJson("/api/v1/projects/{$this->projet->id}/pipeline-health")
-            ->assertOk()
-            ->json('data.stages');
-
-        $ligne = collect($sante)->firstWhere('stage_id', $etape->id);
+        $ligne = collect($this->santeDuPipeline())->firstWhere('stage_id', $etape->id);
+        $this->assertNotNull($ligne);
 
         // Un dossier rangé ne stationne pas dans une étape : le compter
         // gonflerait l'alerte d'immobilité sans qu'aucune action ne la réduise.
@@ -173,10 +203,7 @@ class ProspectArchiveTest extends TestCase
 
         $this->archiver($prospect, true, 'Injoignable depuis six mois.');
 
-        $journal = $this->actingAs($this->admin)
-            ->getJson("/api/v1/prospects/{$prospect->id}/activities")
-            ->assertOk()
-            ->json('data');
+        $journal = $this->journalDe($prospect);
 
         $this->assertSame('archived', $journal[0]['type']);
         $this->assertSame('Injoignable depuis six mois.', $journal[0]['payload']['motif']);
@@ -211,15 +238,11 @@ class ProspectArchiveTest extends TestCase
         $this->archiver($prospect);
         $this->archiver($prospect);
 
-        $journal = $this->actingAs($this->admin)
-            ->getJson("/api/v1/prospects/{$prospect->id}/activities")
-            ->json('data');
-
         // Un état déjà atteint n'est pas un événement : le réécrire noierait
         // l'historique réel sous des lignes sans information.
         $this->assertSame(
             1,
-            collect($journal)->where('type', 'archived')->count(),
+            collect($this->journalDe($prospect))->where('type', 'archived')->count(),
         );
     }
 }

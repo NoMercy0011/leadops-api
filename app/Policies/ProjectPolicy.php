@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Project;
 use App\Models\User;
+use App\Support\TeamResolver;
 
 /**
  * Deuxième couche d'autorisation, après le cloisonnement tenant.
@@ -35,7 +36,18 @@ class ProjectPolicy
             return false;
         }
 
-        return $project->members()->whereKey($user->id)->exists();
+        // Même règle que `Project::scopeVisibleTo`, et c'est tout l'objet de
+        // cette ligne : la liste appliquait le périmètre d'équipe, la fiche
+        // exigeait une adhésion nominative. Un manager voyait donc trois
+        // projets dans `/projets` dont chaque fiche répondait 403 — une liste
+        // et son détail qui se contredisent.
+        //
+        // Pour un commercial, `scopeUserIds` ne contient que lui : le
+        // comportement est inchangé. Pour un manager, ce sont ses commerciaux,
+        // ce qui est la définition même de son périmètre — invariant n°5.
+        return $project->members()
+            ->whereIn('users.id', TeamResolver::scopeUserIds($user))
+            ->exists();
     }
 
     /**

@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\V1\ProspectController;
 use App\Http\Controllers\Api\V1\ProspectImportController;
 use App\Http\Controllers\Api\V1\QuestionController;
 use App\Http\Controllers\Api\V1\ReportController;
+use App\Http\Controllers\Api\V1\SubscriptionOverviewController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\VariantComparisonController;
 use App\Http\Controllers\Api\V1\VariantController;
@@ -57,6 +58,10 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('auth/logout', LogoutController::class)->name('auth.logout');
         Route::get('me', MeController::class)->name('me');
+
+        // Délibérément hors du groupe `subscription.writes` : c'est quand
+        // l'abonnement est suspendu ou expiré que cet écran doit répondre.
+        Route::get('subscription', SubscriptionOverviewController::class)->name('subscription');
 
         // Back-office — hors cloisonnement, doublement gardé : middleware de
         // groupe et Policies au niveau de chaque objet.

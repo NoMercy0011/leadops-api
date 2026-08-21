@@ -136,6 +136,7 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
 
             Route::patch('prospects/{prospect}/stage', [ProspectActionController::class, 'changeStage'])->name('prospects.stage');
             Route::patch('prospects/{prospect}/assign', [ProspectActionController::class, 'assign'])->name('prospects.assign');
+            Route::patch('prospects/{prospect}/archive', [ProspectActionController::class, 'archive'])->name('prospects.archive');
             Route::patch('prospects/{prospect}/next-action', [ProspectActionController::class, 'planNextAction'])->name('prospects.next-action');
             Route::post('prospects/{prospect}/notes', [ProspectActionController::class, 'addNote'])->name('prospects.notes.store');
             Route::get('prospects/{prospect}/activities', [ProspectActionController::class, 'activities'])->name('prospects.activities');

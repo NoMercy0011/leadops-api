@@ -54,8 +54,14 @@ class ProspectController extends Controller
     private function filtree(Request $request): Builder
     {
         return Prospect::query()
-            // Deux couches : CompanyScope borne à l'entreprise, `visibleTo`
-            // applique ensuite la restriction de rôle.
+            // Trois couches : CompanyScope borne à l'entreprise, NonArchivedScope
+            // écarte les dossiers rangés, `visibleTo` applique la restriction de
+            // rôle. Le second se retire explicitement pour la vue « archivés »,
+            // qui est le seul moyen de les retrouver.
+            ->when(
+                $request->boolean('archived'),
+                fn ($query) => $query->onlyArchived(),
+            )
             ->visibleTo($request->user())
             ->when(
                 $request->integer('project_id'),

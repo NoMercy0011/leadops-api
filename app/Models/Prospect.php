@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Models\Scopes\NonArchivedScope;
 use App\Support\TeamResolver;
 use Carbon\CarbonInterface;
 use Database\Factories\ProspectFactory;
@@ -34,6 +35,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonInterface|null $qualified_at
  * @property CarbonInterface|null $converted_at
  * @property CarbonInterface|null $lost_at
+ * @property CarbonInterface|null $archived_at
  * @property PipelineStage $stage
  * @property Project $project
  * @property User|null $assignedUser
@@ -58,7 +60,63 @@ class Prospect extends Model
             'qualified_at' => 'datetime',
             'converted_at' => 'datetime',
             'lost_at' => 'datetime',
+            'archived_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new NonArchivedScope);
+    }
+
+    /**
+     * Résolution de route sans le filtre d'archivage.
+     *
+     * Sans cette dérogation, la fiche d'un prospect archivé répondrait 404 —
+     * or l'archivage le range, il ne le cache pas : il doit rester consultable
+     * et pouvoir être désarchivé depuis sa propre fiche.
+     *
+     * Le cloisonnement par entreprise, lui, continue de s'appliquer : c'est
+     * `CompanyScope`, et il n'est pas retiré ici.
+     */
+    public function resolveRouteBinding($value, $field = null): ?Model
+    {
+        return static::query()
+            ->withoutGlobalScope(NonArchivedScope::class)
+            ->where($field ?? $this->getRouteKeyName(), $value)
+            ->first();
+    }
+
+    /**
+     * Inclut les prospects archivés.
+     *
+     * Nom délibérément explicite : chaque appel est une dérogation au
+     * cloisonnement d'archivage et doit sauter aux yeux en revue de code.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeWithArchived(Builder $query): Builder
+    {
+        return $query->withoutGlobalScope(NonArchivedScope::class);
+    }
+
+    /**
+     * Ne retient que les prospects archivés.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeOnlyArchived(Builder $query): Builder
+    {
+        return $query
+            ->withoutGlobalScope(NonArchivedScope::class)
+            ->whereNotNull('archived_at');
+    }
+
+    public function isArchived(): bool
+    {
+        return $this->archived_at !== null;
     }
 
     /**

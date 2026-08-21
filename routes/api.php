@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\V1\Auth\LoginController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\MeController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
+use App\Http\Controllers\Api\V1\DataQualityController;
+use App\Http\Controllers\Api\V1\PipelineHealthController;
 use App\Http\Controllers\Api\V1\PipelineStageController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\ProjectMemberController;
@@ -89,6 +91,11 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::patch('projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
             // Pas de route de suppression : un projet s'archive, il ne se
             // supprime pas. Le pourquoi est dans ProjectController.
+
+            Route::get('projects/{project}/pipeline-health', PipelineHealthController::class)
+                ->name('projects.pipeline-health');
+            Route::get('projects/{project}/data-quality', DataQualityController::class)
+                ->name('projects.data-quality');
 
             Route::get('projects/{project}/members', [ProjectMemberController::class, 'index'])->name('projects.members.index');
             Route::put('projects/{project}/members', [ProjectMemberController::class, 'sync'])->name('projects.members.sync');

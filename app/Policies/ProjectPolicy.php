@@ -39,6 +39,23 @@ class ProjectPolicy
     }
 
     /**
+     * Lire l'activité agrégée du projet — santé du pipeline, durées, immobiles.
+     *
+     * Même règle que les rapports : agréger l'activité d'une équipe relève de
+     * l'encadrement. Un commercial dispose de sa liste de prospects, où figure
+     * déjà tout ce qui le concerne, et n'a pas à connaître le rythme de ses
+     * collègues.
+     *
+     * Un manager y a droit, mais sur son seul périmètre : le service applique
+     * `visibleTo`, si bien que ses chiffres portent sur son équipe.
+     */
+    public function viewReports(User $user, Project $project): bool
+    {
+        return ($user->isAdminClient() || $user->isManager())
+            && $this->view($user, $project);
+    }
+
+    /**
      * La création d'un projet consomme un quota d'abonnement et engage la
      * stratégie commerciale : elle reste à l'Admin Client.
      */

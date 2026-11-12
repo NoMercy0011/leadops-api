@@ -33,20 +33,49 @@ class IndexCoverageTest extends TestCase
 
     private const VOLUME = 50_000;
 
+    /**
+     * Le volume est réparti entre plusieurs entreprises, comme en production.
+     *
+     * Avec une seule entreprise, `company_id = ?` retient 100 % de la table :
+     * le balayage complet devient alors le meilleur plan, et l'optimiseur de
+     * MariaDB 11 le choisit à raison — 10.4 prenait encore l'index. Le test
+     * accusait un index manquant qui ne manquait pas. L'entreprise interrogée
+     * n'en est ici qu'une sur vingt-cinq.
+     */
+    private const ENTREPRISES = 25;
+
     private Company $company;
 
     private Project $project;
+
+    /** @var list<array{company_id: int, project_id: int, etapes: list<int>}> */
+    private array $locataires = [];
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->company = Company::factory()->create();
-        Subscription::factory()->for($this->company)->for(Plan::factory()->enterprise())->create();
+        $plan = Plan::factory()->enterprise()->create();
 
-        $this->project = Project::factory()->forCompany($this->company)->create();
-        app(PipelineService::class)->createDefaultStages($this->project);
-        $this->project->refresh();
+        for ($n = 0; $n < self::ENTREPRISES; $n++) {
+            $company = Company::factory()->create();
+            Subscription::factory()->for($company)->for($plan)->create();
+
+            $project = Project::factory()->forCompany($company)->create();
+            app(PipelineService::class)->createDefaultStages($project);
+            $project->refresh();
+
+            if ($n === 0) {
+                $this->company = $company;
+                $this->project = $project;
+            }
+
+            $this->locataires[] = [
+                'company_id' => $company->id,
+                'project_id' => $project->id,
+                'etapes' => $project->stages()->pluck('id')->all(),
+            ];
+        }
 
         $this->remplir();
     }
@@ -126,22 +155,27 @@ class IndexCoverageTest extends TestCase
 
     private function remplir(): void
     {
-        $etapes = $this->project->stages()->pluck('id')->all();
         $maintenant = now()->toDateTimeString();
         $lignes = [];
 
         for ($i = 0; $i < self::VOLUME; $i++) {
+            $locataire = $this->locataires[$i % self::ENTREPRISES];
+            // Rang de la ligne au sein de son entreprise : les proportions
+            // ci-dessous valent ainsi pour chaque entreprise prise à part.
+            $rang = intdiv($i, self::ENTREPRISES);
+            $etapes = $locataire['etapes'];
+
             $lignes[] = [
-                'company_id' => $this->company->id,
-                'project_id' => $this->project->id,
-                'stage_id' => $etapes[$i % count($etapes)],
+                'company_id' => $locataire['company_id'],
+                'project_id' => $locataire['project_id'],
+                'stage_id' => $etapes[$rang % count($etapes)],
                 'assigned_user_id' => null,
                 'first_name' => "Charge{$i}",
                 // Numéros distincts : un rapprochement testé sur une colonne
                 // à valeur unique ne dirait rien de sa sélectivité réelle.
                 'phone_normalized' => '+2613'.str_pad((string) $i, 8, '0', STR_PAD_LEFT),
-                'next_action_at' => $i % 20 === 0 ? $maintenant : null,
-                'converted_at' => $i % 10 === 0 ? $maintenant : null,
+                'next_action_at' => $rang % 20 === 0 ? $maintenant : null,
+                'converted_at' => $rang % 10 === 0 ? $maintenant : null,
                 'created_at' => $maintenant,
                 'updated_at' => $maintenant,
             ];

@@ -113,15 +113,18 @@ final class ReportingService
                 // journée aux deux extrémités sans que rien ne le signale.
                 'today' => Appointment::query()
                     ->visibleTo($viewer)
+                    ->ofActiveProspects()
                     ->between($ouverture, $fermeture)
                     ->count(),
                 'upcoming' => Appointment::query()
                     ->visibleTo($viewer)
+                    ->ofActiveProspects()
                     ->where('scheduled_at', '>', $fermeture)
                     ->where('status', AppointmentStatus::Planned->value)
                     ->count(),
                 'overdue' => Appointment::query()
                     ->visibleTo($viewer)
+                    ->ofActiveProspects()
                     ->where('scheduled_at', '<', now())
                     ->where('status', AppointmentStatus::Planned->value)
                     ->count(),
@@ -303,6 +306,7 @@ final class ReportingService
     {
         return Appointment::query()
             ->visibleTo($viewer)
+            ->ofActiveProspects()
             ->when(isset($filtres['project_id']), fn ($q) => $q->where('project_id', $filtres['project_id']))
             ->when(isset($filtres['user_id']), fn ($q) => $q->where('user_id', $filtres['user_id']))
             ->when(

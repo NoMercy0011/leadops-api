@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Models\Scopes\NonArchivedScope;
 use App\Support\TeamResolver;
 use Carbon\CarbonInterface;
 use Database\Factories\ProspectFactory;
@@ -34,6 +35,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonInterface|null $qualified_at
  * @property CarbonInterface|null $converted_at
  * @property CarbonInterface|null $lost_at
+ * @property CarbonInterface|null $archived_at
+ * @property CarbonInterface|null $erased_at
  * @property PipelineStage $stage
  * @property Project $project
  * @property User|null $assignedUser
@@ -58,7 +61,73 @@ class Prospect extends Model
             'qualified_at' => 'datetime',
             'converted_at' => 'datetime',
             'lost_at' => 'datetime',
+            'archived_at' => 'datetime',
+            'erased_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new NonArchivedScope);
+    }
+
+    /**
+     * Résolution de route sans le filtre d'archivage.
+     *
+     * Sans cette dérogation, la fiche d'un prospect archivé répondrait 404 —
+     * or l'archivage le range, il ne le cache pas : il doit rester consultable
+     * et pouvoir être désarchivé depuis sa propre fiche.
+     *
+     * Le cloisonnement par entreprise, lui, continue de s'appliquer : c'est
+     * `CompanyScope`, et il n'est pas retiré ici.
+     */
+    public function resolveRouteBinding($value, $field = null): ?Model
+    {
+        return static::query()
+            ->withoutGlobalScope(NonArchivedScope::class)
+            ->where($field ?? $this->getRouteKeyName(), $value)
+            ->first();
+    }
+
+    /**
+     * Inclut les prospects archivés.
+     *
+     * Nom délibérément explicite : chaque appel est une dérogation au
+     * cloisonnement d'archivage et doit sauter aux yeux en revue de code.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeWithArchived(Builder $query): Builder
+    {
+        return $query->withoutGlobalScope(NonArchivedScope::class);
+    }
+
+    /**
+     * Ne retient que les prospects archivés.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeOnlyArchived(Builder $query): Builder
+    {
+        return $query
+            ->withoutGlobalScope(NonArchivedScope::class)
+            ->whereNotNull('archived_at');
+    }
+
+    public function isArchived(): bool
+    {
+        return $this->archived_at !== null;
+    }
+
+    /**
+     * Données personnelles effacées (lot 9, règle R4) : la fiche ne garde que
+     * ce qui sert aux statistiques, et n'accepte plus d'écriture.
+     */
+    public function isErased(): bool
+    {
+        return $this->erased_at !== null;
     }
 
     /**
@@ -95,6 +164,10 @@ class Prospect extends Model
 
     public function fullName(): string
     {
+        if ($this->isErased()) {
+            return 'Prospect effacé';
+        }
+
         return trim($this->first_name.' '.($this->last_name ?? ''));
     }
 
@@ -116,10 +189,22 @@ class Prospect extends Model
         // Les prospects non affectés restent visibles de l'équipe : ce sont
         // ceux qu'un manager doit pouvoir distribuer, et les masquer les
         // rendrait introuvables jusqu'à ce que quelqu'un les réclame.
+        //
+        // Mais seulement dans les projets ouverts à l'utilisateur (lot 9,
+        // règle R6 et correction C9) : ceux de son équipe pour un manager,
+        // ceux dont il est membre pour un commercial. Sans cette borne, l'un
+        // et l'autre voyaient les non-affectés de toute l'entreprise.
+        // Colonnes qualifiées : les rapports joignent `pipeline_stages`, qui a
+        // aussi un `project_id`, et la condition deviendrait ambiguë.
         return $query->where(
             fn (Builder $q) => $q
-                ->whereIn('assigned_user_id', $ids)
-                ->orWhereNull('assigned_user_id')
+                ->whereIn($q->qualifyColumn('assigned_user_id'), $ids)
+                ->orWhere(fn (Builder $nonAffectes) => $nonAffectes
+                    ->whereNull($nonAffectes->qualifyColumn('assigned_user_id'))
+                    ->whereIn(
+                        $nonAffectes->qualifyColumn('project_id'),
+                        Project::query()->visibleTo($viewer)->select('projects.id'),
+                    ))
         );
     }
 

@@ -99,7 +99,7 @@ class AppointmentController extends Controller
         // Le prospect détermine le projet : le laisser saisir séparément
         // ouvrirait la porte à un rendez-vous rattaché au mauvais projet, que
         // rien ne rattraperait ensuite.
-        $prospect = Prospect::query()->findOrFail($donnees['prospect_id']);
+        $prospect = Prospect::query()->withArchived()->findOrFail($donnees['prospect_id']);
 
         $appointment = $this->rendezVous->create($prospect, $donnees);
 

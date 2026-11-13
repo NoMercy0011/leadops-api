@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Prospect;
 use App\Services\ProspectService;
 use App\Services\SubscriptionLimitService;
+use App\Support\ProspectListFilter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,54 +40,79 @@ class ProspectController extends Controller
         // Le calculer côté front sur `data` donnerait un compte faux dès la
         // seconde page.
         return ProspectResource::collection($prospects)
-            ->additional(['summary' => $this->resume($request)]);
+            ->additional([
+                'summary' => $this->resume($request),
+                'facets' => $this->facettes($request),
+            ]);
     }
 
     /**
-     * Requête de base : cloisonnement, périmètre de rôle et filtres de l'URL.
+     * Effectifs derrière chaque valeur de filtre.
      *
-     * Partagée par la liste et par son résumé, pour que les deux portent
-     * exactement sur le même ensemble. Deux constructions séparées finiraient
-     * par diverger, et le résumé mentirait sans que rien ne le signale.
+     * Ce sont les nombres inscrits sur les jetons de la barre de filtres : on
+     * va voir « les quatre qualifiés », pas « les qualifiés ». Sans eux, le
+     * choix se fait à l'aveugle et une facette vide ne se découvre qu'après
+     * l'avoir cliquée.
      *
+     * **Chaque famille ignore son propre filtre et respecte les autres.**
+     * C'est la règle des facettes, et elle n'est pas cosmétique : une fois
+     * « Qualifié » retenu, afficher zéro partout ailleurs empêcherait de voir
+     * où basculer, alors que c'est précisément l'usage — parcourir les étapes
+     * les unes après les autres. Les autres filtres restent appliqués, sans
+     * quoi les comptes annonceraient des résultats que la liste ne montrerait
+     * pas.
+     *
+     * @return array{projects: array<string, int>, stages: array<string, int>, users: array<string, int>}
+     */
+    private function facettes(Request $request): array
+    {
+        $grouper = function (string $colonne, string $sauf) use ($request): array {
+            // `toBase()` plutôt que `get()` : ce sont des agrégats, pas des
+            // prospects. Hydrater un modèle par ligne de résultat coûterait
+            // pour rien, et un alias de comptage n'est de toute façon pas une
+            // propriété du modèle. Les scopes globaux — cloisonnement,
+            // archivage — restent appliqués, `toBase` les résout avant de
+            // rendre la requête sous-jacente.
+            $lignes = $this->filtree($request, [$sauf])
+                ->reorder()
+                ->select($colonne)
+                ->selectRaw('count(*) as effectif')
+                ->groupBy($colonne)
+                ->toBase()
+                ->get();
+
+            $comptes = [];
+
+            foreach ($lignes as $ligne) {
+                // Un prospect sans commercial n'a pas d'identifiant à porter :
+                // « none » est la même clé que celle acceptée par le filtre.
+                $cle = $ligne->{$colonne} === null
+                    ? 'none'
+                    : (string) $ligne->{$colonne};
+
+                $comptes[$cle] = (int) $ligne->effectif;
+            }
+
+            return $comptes;
+        };
+
+        return [
+            'projects' => $grouper('project_id', 'project_id'),
+            'stages' => $grouper('stage_id', 'stage_id'),
+            'users' => $grouper('assigned_user_id', 'assigned_user_id'),
+        ];
+    }
+
+    /**
+     * Requête de base de la liste, partagée avec le résumé, les facettes et
+     * l'export : voir `ProspectListFilter`.
+     *
+     * @param  list<string>  $sauf
      * @return Builder<Prospect>
      */
-    private function filtree(Request $request): Builder
+    private function filtree(Request $request, array $sauf = []): Builder
     {
-        return Prospect::query()
-            // Deux couches : CompanyScope borne à l'entreprise, `visibleTo`
-            // applique ensuite la restriction de rôle.
-            ->visibleTo($request->user())
-            ->when(
-                $request->integer('project_id'),
-                fn ($q, int $id) => $q->where('project_id', $id)
-            )
-            ->when(
-                $request->integer('stage_id'),
-                fn ($q, int $id) => $q->where('stage_id', $id)
-            )
-            ->when(
-                $request->has('assigned_user_id'),
-                function ($q) use ($request) {
-                    $valeur = $request->input('assigned_user_id');
-
-                    // « none » filtre les non affectés, ce qu'un identifiant
-                    // numérique ne peut pas exprimer.
-                    return $valeur === 'none'
-                        ? $q->whereNull('assigned_user_id')
-                        : $q->where('assigned_user_id', (int) $valeur);
-                }
-            )
-            ->when(
-                $request->string('search')->trim()->value(),
-                fn ($q, string $terme) => $q->where(function ($sub) use ($terme) {
-                    $sub->where('first_name', 'like', "%{$terme}%")
-                        ->orWhere('last_name', 'like', "%{$terme}%")
-                        ->orWhere('company_name', 'like', "%{$terme}%")
-                        ->orWhere('phone', 'like', "%{$terme}%")
-                        ->orWhere('email', 'like', "%{$terme}%");
-                })
-            );
+        return ProspectListFilter::query($request, $sauf);
     }
 
     /**
@@ -208,14 +234,5 @@ class ProspectController extends Controller
                 $donnees['email'] ?? null,
             )->load('assignedUser')
         );
-    }
-
-    public function destroy(Prospect $prospect): JsonResponse
-    {
-        $this->authorize('delete', $prospect);
-
-        $prospect->delete();
-
-        return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
     }
 }

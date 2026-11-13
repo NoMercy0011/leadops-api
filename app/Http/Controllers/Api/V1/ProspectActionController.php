@@ -10,6 +10,7 @@ use App\Models\Prospect;
 use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\ProspectService;
+use App\Services\ReportingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -44,6 +45,45 @@ class ProspectActionController extends Controller
         return new ProspectResource(
             $this->prospects->moveToStage($prospect, $stage)
         );
+    }
+
+    /**
+     * Range un prospect hors du pipeline actif, ou l'y ramène.
+     *
+     * Distinct de « Perdu », qui est un résultat commercial : un contact
+     * injoignable depuis six mois ou une ligne d'import inexploitable n'ont
+     * pas été perdus, ils n'ont jamais commencé. Les compter comme perdus
+     * ferait mentir le taux de perte.
+     *
+     * Rien n'est supprimé : la fiche reste consultable par son adresse, son
+     * journal d'activités intact, et le geste se défait.
+     */
+    public function archive(Request $request, Prospect $prospect): ProspectResource
+    {
+        // Même autorisation que l'affectation : sortir un dossier des
+        // statistiques est une décision d'encadrement. Un commercial qui
+        // pourrait archiver retirerait ses propres dossiers en souffrance du
+        // périmètre de son manager.
+        $this->authorize('archive', $prospect);
+
+        $donnees = $request->validate([
+            'archived' => ['required', 'boolean'],
+            'motif' => ['sometimes', 'nullable', 'string', 'max:255'],
+        ]);
+
+        $archive = (bool) $donnees['archived'];
+
+        if ($prospect->isArchived() !== $archive) {
+            $prospect->forceFill(['archived_at' => $archive ? now() : null])->save();
+
+            $this->journal->archived($prospect, $archive, $donnees['motif'] ?? null);
+
+            // Les taux changent : le tableau de bord doit le refléter sans
+            // attendre l'expiration du cache.
+            ReportingService::forgetCache($prospect->company_id);
+        }
+
+        return new ProspectResource($prospect->load(['stage', 'assignedUser']));
     }
 
     public function assign(Request $request, Prospect $prospect): ProspectResource

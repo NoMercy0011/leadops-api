@@ -9,6 +9,7 @@ use App\Models\PipelineStage;
 use App\Models\Project;
 use App\Models\Prospect;
 use App\Services\PipelineService;
+use App\Services\ProjectJournal;
 use App\Services\ProspectService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class PipelineStageController extends Controller
     public function __construct(
         private readonly PipelineService $pipeline,
         private readonly ProspectService $prospects,
+        private readonly ProjectJournal $journal,
     ) {}
 
     public function index(Project $project): AnonymousResourceCollection
@@ -48,12 +50,21 @@ class PipelineStageController extends Controller
 
         $this->assertTerminalitéCohérente($project, $donnees);
 
-        $stage = PipelineStage::query()->create([
-            ...$donnees,
-            'company_id' => $project->company_id,
-            'project_id' => $project->id,
-            'position' => $this->pipeline->nextPosition($project),
-        ]);
+        // La modification et sa trace au journal réussissent ou échouent
+        // ensemble (lot 9, règle R7) : une étape ajoutée sans trace ferait
+        // mentir le journal du projet.
+        $stage = DB::transaction(function () use ($donnees, $project) {
+            $stage = PipelineStage::query()->create([
+                ...$donnees,
+                'company_id' => $project->company_id,
+                'project_id' => $project->id,
+                'position' => $this->pipeline->nextPosition($project),
+            ]);
+
+            $this->journal->stageAdded($stage);
+
+            return $stage;
+        });
 
         return (new PipelineStageResource($stage))
             ->response()
@@ -80,7 +91,16 @@ class PipelineStageController extends Controller
 
         $this->assertTerminalitéCohérente($project, $donnees, $stage);
 
-        $stage->update($donnees);
+        // Le libellé est relevé avant la modification : c'est le renommage qui
+        // change rétroactivement le sens des données déjà saisies, et le
+        // journal doit pouvoir dire de quoi vers quoi.
+        $ancienNom = $stage->name;
+
+        DB::transaction(function () use ($stage, $donnees, $ancienNom): void {
+            $stage->update($donnees);
+
+            $this->journal->stageUpdated($stage->fresh() ?? $stage, $ancienNom);
+        });
 
         return new PipelineStageResource($stage->fresh());
     }
@@ -97,7 +117,11 @@ class PipelineStageController extends Controller
             'stages.*' => ['integer'],
         ]);
 
-        $this->pipeline->reorder($project, $donnees['stages']);
+        DB::transaction(function () use ($project, $donnees): void {
+            $this->pipeline->reorder($project, $donnees['stages']);
+
+            $this->journal->stagesReordered($project->fresh() ?? $project);
+        });
 
         return PipelineStageResource::collection($project->stages()->get());
     }
@@ -151,12 +175,21 @@ class PipelineStageController extends Controller
                     });
 
                 $stage->delete();
+
+                $this->journal->stageRemoved($stage->project, $stage->name, $destination->name);
             });
 
             return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
         }
 
-        $stage->delete();
+        $projet = $stage->project;
+        $nom = $stage->name;
+
+        DB::transaction(function () use ($stage, $projet, $nom): void {
+            $stage->delete();
+
+            $this->journal->stageRemoved($projet, $nom, null);
+        });
 
         return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
     }

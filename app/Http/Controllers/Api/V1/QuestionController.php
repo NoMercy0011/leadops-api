@@ -7,16 +7,21 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\QuestionResource;
 use App\Models\Project;
 use App\Models\Question;
+use App\Services\ProjectJournal;
 use App\Services\QuestionnaireService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class QuestionController extends Controller
 {
-    public function __construct(private readonly QuestionnaireService $questionnaire) {}
+    public function __construct(
+        private readonly QuestionnaireService $questionnaire,
+        private readonly ProjectJournal $journal,
+    ) {}
 
     public function index(Project $project): AnonymousResourceCollection
     {
@@ -33,7 +38,15 @@ class QuestionController extends Controller
 
         $donnees = $this->valider($request);
 
-        $question = $this->questionnaire->createQuestion($project, $donnees);
+        // La modification et sa trace au journal réussissent ou échouent
+        // ensemble (lot 9, règle R7).
+        $question = DB::transaction(function () use ($project, $donnees) {
+            $question = $this->questionnaire->createQuestion($project, $donnees);
+
+            $this->journal->questionAdded($question);
+
+            return $question;
+        });
 
         return (new QuestionResource($question))
             ->response()
@@ -46,9 +59,19 @@ class QuestionController extends Controller
 
         $donnees = $this->valider($request, partiel: true);
 
-        return new QuestionResource(
-            $this->questionnaire->updateQuestion($question, $donnees)
-        );
+        // Relevé avant : renommer une question change la lecture de toutes les
+        // réponses déjà collectées, et le journal doit dire de quoi vers quoi.
+        $ancienLibelle = $question->label;
+
+        $misAJour = DB::transaction(function () use ($question, $donnees, $ancienLibelle) {
+            $misAJour = $this->questionnaire->updateQuestion($question, $donnees);
+
+            $this->journal->questionUpdated($misAJour, $ancienLibelle);
+
+            return $misAJour;
+        });
+
+        return new QuestionResource($misAJour);
     }
 
     public function reorder(Request $request, Project $project): AnonymousResourceCollection
@@ -76,7 +99,14 @@ class QuestionController extends Controller
     {
         $this->authorize('managePipeline', $question->project);
 
-        $question->delete();
+        DB::transaction(function () use ($question): void {
+            $question->delete();
+
+            // Écrit après la suppression douce : la question quitte le
+            // formulaire mais ses réponses restent lisibles, et c'est justement
+            // l'écart que le journal doit rendre explicable.
+            $this->journal->questionRemoved($question);
+        });
 
         return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
     }

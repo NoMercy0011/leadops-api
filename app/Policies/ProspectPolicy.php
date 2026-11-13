@@ -2,6 +2,9 @@
 
 namespace App\Policies;
 
+use App\Exceptions\ArchivedReadOnly;
+use App\Exceptions\ErasedReadOnly;
+use App\Models\Project;
 use App\Models\Prospect;
 use App\Models\User;
 use App\Support\TeamResolver;
@@ -32,7 +35,7 @@ class ProspectPolicy
 
     public function update(User $user, Prospect $prospect): bool
     {
-        return $this->estDansSonPerimetre($user, $prospect);
+        return $this->peutEcrire($this->estDansSonPerimetre($user, $prospect), $prospect);
     }
 
     /**
@@ -42,8 +45,59 @@ class ProspectPolicy
      */
     public function assign(User $user, Prospect $prospect): bool
     {
+        return $this->peutEcrire($this->encadre($user, $prospect), $prospect);
+    }
+
+    /**
+     * Archiver et désarchiver : même droit que l'affectation, mais sans la
+     * garde d'archivage — c'est précisément le geste qui la lève. Une fiche
+     * effacée, elle, n'accepte plus rien.
+     *
+     * @throws ErasedReadOnly
+     */
+    public function archive(User $user, Prospect $prospect): bool
+    {
+        $droit = $this->encadre($user, $prospect);
+
+        if ($droit) {
+            ErasedReadOnly::guard($prospect);
+        }
+
+        return $droit;
+    }
+
+    /**
+     * Effacer les données personnelles (lot 9, règle R4) : un geste
+     * irréversible qui engage l'entreprise, réservé à l'Admin Client. Il
+     * reste permis sur un prospect archivé, et sur un projet archivé.
+     */
+    public function erase(User $user, Prospect $prospect): bool
+    {
+        return $user->isAdminClient();
+    }
+
+    private function encadre(User $user, Prospect $prospect): bool
+    {
         return ($user->isAdminClient() || $user->isManager())
             && $this->estDansSonPerimetre($user, $prospect);
+    }
+
+    /**
+     * Le droit de rôle se lit d'abord, la lecture seule ensuite (lot 9) : une
+     * fiche effacée (règle R4), un prospect archivé ou dont le projet l'est
+     * (règle R3) refusent l'écriture.
+     *
+     * @throws ErasedReadOnly
+     * @throws ArchivedReadOnly
+     */
+    private function peutEcrire(bool $droitDeRole, Prospect $prospect): bool
+    {
+        if ($droitDeRole) {
+            ErasedReadOnly::guard($prospect);
+            ArchivedReadOnly::guard($prospect);
+        }
+
+        return $droitDeRole;
     }
 
     public function bulkAssign(User $user): bool
@@ -64,11 +118,6 @@ class ProspectPolicy
         return ! $user->isSuperAdmin();
     }
 
-    public function delete(User $user, Prospect $prospect): bool
-    {
-        return $user->isAdminClient();
-    }
-
     /**
      * Le Super Admin est explicitement exclu : son périmètre est la gestion de
      * la plateforme, pas la consultation des données commerciales de ses
@@ -86,8 +135,10 @@ class ProspectPolicy
 
         // Un prospect non affecté reste dans le périmètre : c'est celui qu'un
         // manager doit pouvoir distribuer et qu'un commercial peut réclamer.
+        // Seulement dans un projet ouvert à l'utilisateur (lot 9, règle R6 et
+        // correction C9) — la même borne que `Prospect::visibleTo`.
         if ($prospect->assigned_user_id === null) {
-            return true;
+            return Project::query()->visibleTo($user)->whereKey($prospect->project_id)->exists();
         }
 
         return TeamResolver::scopeUserIds($user)->contains($prospect->assigned_user_id);

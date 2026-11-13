@@ -22,6 +22,9 @@ enum ActivityType: string
     case AppointmentScheduled = 'appointment_scheduled';
     case AppointmentRescheduled = 'appointment_rescheduled';
     case AppointmentStatusChanged = 'appointment_status_changed';
+    case Archived = 'archived';
+    case Unarchived = 'unarchived';
+    case Erased = 'erased';
 
     public function label(): string
     {
@@ -37,6 +40,9 @@ enum ActivityType: string
             self::AppointmentScheduled => 'Rendez-vous planifié',
             self::AppointmentRescheduled => 'Rendez-vous déplacé',
             self::AppointmentStatusChanged => 'Rendez-vous mis à jour',
+            self::Archived => 'Prospect archivé',
+            self::Unarchived => 'Prospect désarchivé',
+            self::Erased => 'Données personnelles effacées',
         };
     }
 

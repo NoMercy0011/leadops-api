@@ -213,4 +213,46 @@ class ProjectTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $projetEquipe->id);
     }
+
+    public function test_la_fiche_repond_comme_la_liste_pour_un_manager(): void
+    {
+        $company = $this->entreprise();
+        $manager = User::factory()->manager()->forCompany($company)->create();
+        $commercial = User::factory()->commercial()->managedBy($manager)->create();
+
+        $projetEquipe = Project::factory()->forCompany($company)->create();
+        $projetEquipe->members()->attach($commercial);
+
+        $horsEquipe = Project::factory()->forCompany($company)->create();
+
+        // La liste appliquait le périmètre d'équipe, la fiche exigeait une
+        // adhésion nominative : le manager voyait trois projets dans /projets
+        // et recevait un 403 en ouvrant chacun. Une liste et son détail ne
+        // peuvent pas répondre différemment à la même question.
+        $this->actingAs($manager)
+            ->getJson("/api/v1/projects/{$projetEquipe->id}")
+            ->assertOk();
+
+        $this->actingAs($manager)
+            ->getJson("/api/v1/projects/{$horsEquipe->id}")
+            ->assertForbidden();
+    }
+
+    public function test_elargir_la_regle_du_manager_n_elargit_pas_celle_du_commercial(): void
+    {
+        $company = $this->entreprise();
+        $manager = User::factory()->manager()->forCompany($company)->create();
+        $lui = User::factory()->commercial()->managedBy($manager)->create();
+        $son_collegue = User::factory()->commercial()->managedBy($manager)->create();
+
+        $projetDuCollegue = Project::factory()->forCompany($company)->create();
+        $projetDuCollegue->members()->attach($son_collegue);
+
+        // Le périmètre d'un commercial reste lui seul : partager un manager ne
+        // donne pas accès aux projets d'un collègue. C'est ce que garantit
+        // `TeamResolver::scopeUserIds`, qui ne renvoie que lui pour ce rôle.
+        $this->actingAs($lui)
+            ->getJson("/api/v1/projects/{$projetDuCollegue->id}")
+            ->assertForbidden();
+    }
 }

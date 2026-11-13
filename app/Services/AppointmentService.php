@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Enums\ActivityType;
+use App\Exceptions\ArchivedReadOnly;
+use App\Exceptions\ErasedReadOnly;
 use App\Models\Appointment;
 use App\Models\Prospect;
 use App\Models\ProspectActivity;
@@ -21,9 +23,18 @@ final class AppointmentService
 {
     /**
      * @param  array<string, mixed>  $donnees
+     *
+     * @throws ErasedReadOnly
+     * @throws ArchivedReadOnly
      */
     public function create(Prospect $prospect, array $donnees): Appointment
     {
+        // Un prospect archivé, effacé, ou d'un projet archivé n'accepte pas de
+        // nouveau rendez-vous (lot 9, règles R3 et R4). Le refus dit pourquoi,
+        // là où un 404 laissait croire que le prospect n'existait pas.
+        ErasedReadOnly::guard($prospect);
+        ArchivedReadOnly::guard($prospect);
+
         return DB::transaction(function () use ($prospect, $donnees) {
             $appointment = new Appointment($donnees);
 

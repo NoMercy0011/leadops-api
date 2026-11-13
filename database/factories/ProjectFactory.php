@@ -43,4 +43,9 @@ class ProjectFactory extends Factory
     {
         return $this->state(fn () => ['status' => ProjectStatus::Completed]);
     }
+
+    public function archived(): static
+    {
+        return $this->state(fn () => ['status' => ProjectStatus::Archived]);
+    }
 }

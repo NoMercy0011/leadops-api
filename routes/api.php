@@ -10,16 +10,22 @@ use App\Http\Controllers\Api\V1\Auth\LoginController;
 use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\MeController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
+use App\Http\Controllers\Api\V1\DataQualityController;
+use App\Http\Controllers\Api\V1\PipelineHealthController;
 use App\Http\Controllers\Api\V1\PipelineStageController;
+use App\Http\Controllers\Api\V1\ProjectActivityController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\ProjectMemberController;
 use App\Http\Controllers\Api\V1\ProspectActionController;
 use App\Http\Controllers\Api\V1\ProspectAnswerController;
 use App\Http\Controllers\Api\V1\ProspectController;
+use App\Http\Controllers\Api\V1\ProspectErasureController;
 use App\Http\Controllers\Api\V1\ProspectImportController;
 use App\Http\Controllers\Api\V1\QuestionController;
 use App\Http\Controllers\Api\V1\ReportController;
+use App\Http\Controllers\Api\V1\SubscriptionOverviewController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\VariantComparisonController;
 use App\Http\Controllers\Api\V1\VariantController;
 use Illuminate\Support\Facades\Route;
 
@@ -54,6 +60,15 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         Route::post('auth/logout', LogoutController::class)->name('auth.logout');
         Route::get('me', MeController::class)->name('me');
 
+        // Délibérément hors du groupe `subscription.writes` : c'est quand
+        // l'abonnement est suspendu ou expiré que cet écran doit répondre.
+        Route::get('subscription', SubscriptionOverviewController::class)->name('subscription');
+
+        // Effacement des données personnelles (lot 9, règle R4), hors
+        // `subscription.writes` pour la même raison : une demande d'effacement
+        // ne peut pas attendre que l'abonnement soit réglé.
+        Route::post('prospects/{prospect}/erase', ProspectErasureController::class)->name('prospects.erase');
+
         // Back-office — hors cloisonnement, doublement gardé : middleware de
         // groupe et Policies au niveau de chaque objet.
         Route::prefix('admin')->middleware('super-admin')->name('admin.')->group(function () {
@@ -87,7 +102,17 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('projects', [ProjectController::class, 'store'])->name('projects.store');
             Route::get('projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
             Route::patch('projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
-            Route::delete('projects/{project}', [ProjectController::class, 'destroy'])->name('projects.destroy');
+            // Pas de route de suppression : un projet s'archive, il ne se
+            // supprime pas. Le pourquoi est dans ProjectController.
+
+            Route::get('projects/{project}/pipeline-health', PipelineHealthController::class)
+                ->name('projects.pipeline-health');
+            Route::get('projects/{project}/data-quality', DataQualityController::class)
+                ->name('projects.data-quality');
+            Route::get('projects/{project}/activities', ProjectActivityController::class)
+                ->name('projects.activities');
+            Route::get('projects/{project}/variant-comparison', VariantComparisonController::class)
+                ->name('projects.variant-comparison');
 
             Route::get('projects/{project}/members', [ProjectMemberController::class, 'index'])->name('projects.members.index');
             Route::put('projects/{project}/members', [ProjectMemberController::class, 'sync'])->name('projects.members.sync');
@@ -118,10 +143,12 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('prospects', [ProspectController::class, 'store'])->name('prospects.store');
             Route::get('prospects/{prospect}', [ProspectController::class, 'show'])->name('prospects.show');
             Route::patch('prospects/{prospect}', [ProspectController::class, 'update'])->name('prospects.update');
-            Route::delete('prospects/{prospect}', [ProspectController::class, 'destroy'])->name('prospects.destroy');
+            // Pas de suppression physique : un prospect s'archive, ou ses
+            // données personnelles s'effacent (`prospects.erase`).
 
             Route::patch('prospects/{prospect}/stage', [ProspectActionController::class, 'changeStage'])->name('prospects.stage');
             Route::patch('prospects/{prospect}/assign', [ProspectActionController::class, 'assign'])->name('prospects.assign');
+            Route::patch('prospects/{prospect}/archive', [ProspectActionController::class, 'archive'])->name('prospects.archive');
             Route::patch('prospects/{prospect}/next-action', [ProspectActionController::class, 'planNextAction'])->name('prospects.next-action');
             Route::post('prospects/{prospect}/notes', [ProspectActionController::class, 'addNote'])->name('prospects.notes.store');
             Route::get('prospects/{prospect}/activities', [ProspectActionController::class, 'activities'])->name('prospects.activities');

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\Prospect;
 use App\Services\ProspectImporter;
+use App\Support\ProspectListFilter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -52,13 +53,11 @@ class ProspectImportController extends Controller
     {
         $this->authorize('export', Prospect::class);
 
-        $query = Prospect::query()
-            ->visibleTo($request->user())
+        // Le même filtre que la liste (lot 9, faille F17) : vue des archivés,
+        // projet, étape, commercial et recherche. L'export renvoie ce que
+        // l'écran montre, ni plus ni moins.
+        $query = ProspectListFilter::query($request)
             ->with(['stage', 'assignedUser', 'project'])
-            ->when(
-                $request->integer('project_id'),
-                fn ($q, int $id) => $q->where('project_id', $id)
-            )
             ->orderBy('id');
 
         $nomFichier = 'prospects-'.now()->format('Y-m-d').'.csv';

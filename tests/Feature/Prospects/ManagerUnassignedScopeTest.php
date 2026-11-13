@@ -65,8 +65,9 @@ class ManagerUnassignedScopeTest extends TestCase
         $visible = Prospect::factory()->forProject($this->projetEquipe)->unassigned()->create();
         $cache = Prospect::factory()->forProject($this->projetHorsEquipe)->unassigned()->create();
 
-        $ids = collect($this->actingAs($this->manager)->getJson('/api/v1/prospects')->assertOk()->json('data'))
-            ->pluck('id');
+        /** @var list<array{id: int}> $liste */
+        $liste = $this->actingAs($this->manager)->getJson('/api/v1/prospects')->assertOk()->json('data');
+        $ids = collect($liste)->pluck('id');
 
         $this->assertTrue($ids->contains($visible->id));
         $this->assertFalse($ids->contains($cache->id));
@@ -97,11 +98,12 @@ class ManagerUnassignedScopeTest extends TestCase
         Prospect::factory()->forProject($this->projetEquipe)->unassigned()->create();
         Prospect::factory()->forProject($this->projetHorsEquipe)->unassigned()->create();
 
-        $projets = collect($this->actingAs($this->manager)
+        /** @var list<array{project_id: int}> $lignes */
+        $lignes = $this->actingAs($this->manager)
             ->getJson("/api/v1/projects/{$this->projetEquipe->id}/variant-comparison")
             ->assertOk()
-            ->json('data.projets'))
-            ->pluck('project_id');
+            ->json('data.projets');
+        $projets = collect($lignes)->pluck('project_id');
 
         $this->assertTrue($projets->contains($this->projetEquipe->id));
         $this->assertFalse($projets->contains($this->projetHorsEquipe->id));

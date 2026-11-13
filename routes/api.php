@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\V1\ProjectMemberController;
 use App\Http\Controllers\Api\V1\ProspectActionController;
 use App\Http\Controllers\Api\V1\ProspectAnswerController;
 use App\Http\Controllers\Api\V1\ProspectController;
+use App\Http\Controllers\Api\V1\ProspectErasureController;
 use App\Http\Controllers\Api\V1\ProspectImportController;
 use App\Http\Controllers\Api\V1\QuestionController;
 use App\Http\Controllers\Api\V1\ReportController;
@@ -62,6 +63,11 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
         // Délibérément hors du groupe `subscription.writes` : c'est quand
         // l'abonnement est suspendu ou expiré que cet écran doit répondre.
         Route::get('subscription', SubscriptionOverviewController::class)->name('subscription');
+
+        // Effacement des données personnelles (lot 9, règle R4), hors
+        // `subscription.writes` pour la même raison : une demande d'effacement
+        // ne peut pas attendre que l'abonnement soit réglé.
+        Route::post('prospects/{prospect}/erase', ProspectErasureController::class)->name('prospects.erase');
 
         // Back-office — hors cloisonnement, doublement gardé : middleware de
         // groupe et Policies au niveau de chaque objet.
@@ -137,7 +143,8 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('prospects', [ProspectController::class, 'store'])->name('prospects.store');
             Route::get('prospects/{prospect}', [ProspectController::class, 'show'])->name('prospects.show');
             Route::patch('prospects/{prospect}', [ProspectController::class, 'update'])->name('prospects.update');
-            Route::delete('prospects/{prospect}', [ProspectController::class, 'destroy'])->name('prospects.destroy');
+            // Pas de suppression physique : un prospect s'archive, ou ses
+            // données personnelles s'effacent (`prospects.erase`).
 
             Route::patch('prospects/{prospect}/stage', [ProspectActionController::class, 'changeStage'])->name('prospects.stage');
             Route::patch('prospects/{prospect}/assign', [ProspectActionController::class, 'assign'])->name('prospects.assign');

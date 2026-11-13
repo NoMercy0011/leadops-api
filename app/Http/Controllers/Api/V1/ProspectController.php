@@ -282,13 +282,4 @@ class ProspectController extends Controller
             )->load('assignedUser')
         );
     }
-
-    public function destroy(Prospect $prospect): JsonResponse
-    {
-        $this->authorize('delete', $prospect);
-
-        $prospect->delete();
-
-        return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
-    }
 }

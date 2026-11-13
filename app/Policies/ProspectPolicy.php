@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Exceptions\ArchivedReadOnly;
+use App\Exceptions\ErasedReadOnly;
 use App\Models\Prospect;
 use App\Models\User;
 use App\Support\TeamResolver;
@@ -43,29 +44,55 @@ class ProspectPolicy
      */
     public function assign(User $user, Prospect $prospect): bool
     {
-        return $this->peutEcrire($this->archive($user, $prospect), $prospect);
+        return $this->peutEcrire($this->encadre($user, $prospect), $prospect);
     }
 
     /**
      * Archiver et désarchiver : même droit que l'affectation, mais sans la
-     * garde de lecture seule — c'est précisément le geste qui la lève.
+     * garde d'archivage — c'est précisément le geste qui la lève. Une fiche
+     * effacée, elle, n'accepte plus rien.
+     *
+     * @throws ErasedReadOnly
      */
     public function archive(User $user, Prospect $prospect): bool
+    {
+        $droit = $this->encadre($user, $prospect);
+
+        if ($droit) {
+            ErasedReadOnly::guard($prospect);
+        }
+
+        return $droit;
+    }
+
+    /**
+     * Effacer les données personnelles (lot 9, règle R4) : un geste
+     * irréversible qui engage l'entreprise, réservé à l'Admin Client. Il
+     * reste permis sur un prospect archivé, et sur un projet archivé.
+     */
+    public function erase(User $user, Prospect $prospect): bool
+    {
+        return $user->isAdminClient();
+    }
+
+    private function encadre(User $user, Prospect $prospect): bool
     {
         return ($user->isAdminClient() || $user->isManager())
             && $this->estDansSonPerimetre($user, $prospect);
     }
 
     /**
-     * Le droit de rôle se lit d'abord, la lecture seule ensuite (lot 9,
-     * règle R3) : un prospect archivé, ou dont le projet l'est, refuse
-     * l'écriture.
+     * Le droit de rôle se lit d'abord, la lecture seule ensuite (lot 9) : une
+     * fiche effacée (règle R4), un prospect archivé ou dont le projet l'est
+     * (règle R3) refusent l'écriture.
      *
+     * @throws ErasedReadOnly
      * @throws ArchivedReadOnly
      */
     private function peutEcrire(bool $droitDeRole, Prospect $prospect): bool
     {
         if ($droitDeRole) {
+            ErasedReadOnly::guard($prospect);
             ArchivedReadOnly::guard($prospect);
         }
 
@@ -88,11 +115,6 @@ class ProspectPolicy
     public function export(User $user): bool
     {
         return ! $user->isSuperAdmin();
-    }
-
-    public function delete(User $user, Prospect $prospect): bool
-    {
-        return $user->isAdminClient();
     }
 
     /**

@@ -36,6 +36,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonInterface|null $converted_at
  * @property CarbonInterface|null $lost_at
  * @property CarbonInterface|null $archived_at
+ * @property CarbonInterface|null $erased_at
  * @property PipelineStage $stage
  * @property Project $project
  * @property User|null $assignedUser
@@ -61,6 +62,7 @@ class Prospect extends Model
             'converted_at' => 'datetime',
             'lost_at' => 'datetime',
             'archived_at' => 'datetime',
+            'erased_at' => 'datetime',
         ];
     }
 
@@ -120,6 +122,15 @@ class Prospect extends Model
     }
 
     /**
+     * Données personnelles effacées (lot 9, règle R4) : la fiche ne garde que
+     * ce qui sert aux statistiques, et n'accepte plus d'écriture.
+     */
+    public function isErased(): bool
+    {
+        return $this->erased_at !== null;
+    }
+
+    /**
      * @return BelongsTo<Project, $this>
      */
     public function project(): BelongsTo
@@ -153,6 +164,10 @@ class Prospect extends Model
 
     public function fullName(): string
     {
+        if ($this->isErased()) {
+            return 'Prospect effacé';
+        }
+
         return trim($this->first_name.' '.($this->last_name ?? ''));
     }
 

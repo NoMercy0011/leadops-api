@@ -105,6 +105,17 @@ final class ActivityLogger
     }
 
     /**
+     * Trace de l'effacement des données personnelles (lot 9, règle R4).
+     *
+     * Le payload reste vide à dessein : l'événement prouve que l'effacement a
+     * eu lieu, par qui et quand, sans recopier ce qu'il vient d'effacer.
+     */
+    public function erased(Prospect $prospect): void
+    {
+        $this->write($prospect, ActivityType::Erased);
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      */
     private function write(Prospect $prospect, ActivityType $type, array $payload = []): void

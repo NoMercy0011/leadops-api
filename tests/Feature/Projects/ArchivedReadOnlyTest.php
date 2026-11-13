@@ -129,7 +129,7 @@ class ArchivedReadOnlyTest extends TestCase
         $this->assertLectureSeule($this->actingAs($this->admin)
             ->patchJson("/api/v1/prospects/{$prospect->id}/stage", ['stage_id' => $etape->id]));
         $this->assertLectureSeule($this->actingAs($this->admin)
-            ->postJson("/api/v1/prospects/{$prospect->id}/notes", ['body' => 'Rappeler lundi']));
+            ->postJson("/api/v1/prospects/{$prospect->id}/notes", ['note' => 'Rappeler lundi']));
         $this->assertLectureSeule($this->actingAs($this->admin)
             ->patchJson("/api/v1/prospects/{$prospect->id}/assign", ['assigned_user_id' => $this->admin->id]));
 

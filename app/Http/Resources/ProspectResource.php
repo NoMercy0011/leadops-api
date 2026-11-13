@@ -42,6 +42,8 @@ class ProspectResource extends JsonResource
             'next_action_note' => $this->next_action_note,
             'archived_at' => $this->archived_at?->toIso8601String(),
             'is_archived' => $this->isArchived(),
+            'erased_at' => $this->erased_at?->toIso8601String(),
+            'is_erased' => $this->isErased(),
             'converted_at' => $this->converted_at?->toIso8601String(),
             'lost_at' => $this->lost_at?->toIso8601String(),
 

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\ActivityType;
 use App\Enums\AppointmentStatus;
 use App\Enums\AppointmentType;
 use App\Enums\ProjectStatus;
@@ -9,6 +10,7 @@ use App\Enums\SubscriptionStatus;
 use App\Enums\UserRole;
 use App\Models\Appointment;
 use App\Models\Company;
+use App\Models\PipelineStage;
 use App\Models\Plan;
 use App\Models\Project;
 use App\Models\Prospect;
@@ -19,8 +21,12 @@ use App\Models\User;
 use App\Models\Variant;
 use App\Services\ActivityLogger;
 use App\Services\PipelineService;
+use App\Services\ProjectJournal;
 use App\Services\ProspectService;
 use App\Services\QuestionnaireService;
+use App\Services\SubscriptionLimitService;
+use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -81,10 +87,13 @@ class DatabaseSeeder extends Seeder
     }
 
     /**
-     * Deux projets par entreprise, de variantes différentes.
+     * Trois projets par entreprise au plus, dans la limite de son plan.
      *
-     * C'est le minimum pour vérifier à la main que les pipelines sont bien
-     * indépendants : avec un seul projet, l'invariant n°2 ne se voit pas.
+     * Plusieurs projets, c'est le minimum pour vérifier à la main que les
+     * pipelines sont bien indépendants : avec un seul, l'invariant n°2 ne se
+     * voit pas. La limite du plan s'applique comme dans l'application (lot 9,
+     * faille F11) : Delta, sur le plan Starter, en reçoit deux — et montre
+     * ainsi un plafond atteint.
      *
      * @param  list<User>  $commerciaux
      */
@@ -119,6 +128,14 @@ class DatabaseSeeder extends Seeder
                 continue;
             }
 
+            // La même garde que `ProjectController::store` : un jeu d'essai
+            // qui dépasse le plan montre un état que le produit refuse.
+            $limites = app(SubscriptionLimitService::class);
+            $plafond = $limites->limitFor($entreprise, 'projects');
+            if ($plafond !== null && $limites->count($entreprise, 'projects') >= $plafond) {
+                break;
+            }
+
             $projet = Project::query()->create([
                 'company_id' => $entreprise->id,
                 'variant_id' => $variantes[$variante]->id,
@@ -131,6 +148,10 @@ class DatabaseSeeder extends Seeder
             app(PipelineService::class)->createDefaultStages($projet);
 
             $projet->members()->sync(collect($commerciaux)->pluck('id')->all());
+
+            // Comme à la création depuis l'écran : le journal du projet
+            // commence avec lui.
+            app(ProjectJournal::class)->projectCreated($projet);
 
             // Avant les prospects : ce sont eux qui y répondent.
             $this->creerQuestionnaire($projet);
@@ -159,9 +180,16 @@ class DatabaseSeeder extends Seeder
     {
         $prospects = Prospect::query()
             ->acrossAllCompanies()
+            ->withArchived()
             ->where('project_id', $projet->id)
             ->orderBy('id')
             ->get();
+
+        $etapes = PipelineStage::query()
+            ->acrossAllCompanies()
+            ->where('project_id', $projet->id)
+            ->get()
+            ->keyBy('id');
 
         foreach ($prospects->values() as $rang => $prospect) {
             // De 90 jours pour le premier à une dizaine pour le dernier.
@@ -191,7 +219,61 @@ class DatabaseSeeder extends Seeder
                     'occurred_at' => $creation->copy()->addDays($pas * ($index + 1)),
                 ])->saveQuietly();
             }
+
+            $this->recalerJalons($prospect, $creation, $etapes);
         }
+    }
+
+    /**
+     * Recale les jalons sur l'historique étalé (lot 9, faille F11).
+     *
+     * Les jalons ont été posés à l'instant du seed, alors que l'historique
+     * vient d'être reculé : un prospect converti il y a deux mois portait une
+     * conversion datée d'aujourd'hui, et les durées de cycle mentaient. Ils
+     * sont recalculés depuis les changements d'étape, avec la même règle que
+     * `ProspectService::appliquerJalons` : la conversion et la perte datent de
+     * l'entrée dans l'étape, et s'effacent quand le prospect en ressort ; la
+     * qualification date du premier passage par une étape qualifiante.
+     *
+     * @param  Collection<int, PipelineStage>  $etapes
+     */
+    private function recalerJalons(Prospect $prospect, CarbonInterface $creation, Collection $etapes): void
+    {
+        $changements = ProspectActivity::query()
+            ->where('prospect_id', $prospect->id)
+            ->where('type', ActivityType::StageChanged->value)
+            ->orderBy('occurred_at')
+            ->orderBy('id')
+            ->get();
+
+        $initiale = $etapes->get($changements->first()->payload['from_id'] ?? $prospect->stage_id);
+
+        $qualifie = $initiale?->is_qualified ? $creation : null;
+        $converti = $initiale?->is_won ? $creation : null;
+        $perdu = $initiale?->is_lost ? $creation : null;
+
+        foreach ($changements as $changement) {
+            $vers = $etapes->get($changement->payload['to_id'] ?? 0);
+
+            if ($vers === null) {
+                continue;
+            }
+
+            if ($vers->is_qualified && $qualifie === null) {
+                $qualifie = $changement->occurred_at;
+            }
+
+            $converti = $vers->is_won ? ($converti ?? $changement->occurred_at) : null;
+            $perdu = $vers->is_lost ? ($perdu ?? $changement->occurred_at) : null;
+        }
+
+        // Seuls les jalons déjà posés par l'application sont recalés : le
+        // seeder ne décide pas qu'un prospect est converti, il le date.
+        $prospect->forceFill([
+            'qualified_at' => $prospect->qualified_at !== null ? ($qualifie ?? $creation) : null,
+            'converted_at' => $prospect->converted_at !== null ? ($converti ?? $creation) : null,
+            'lost_at' => $prospect->lost_at !== null ? ($perdu ?? $creation) : null,
+        ])->saveQuietly();
     }
 
     /**

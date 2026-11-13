@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\AppointmentStatus;
 use App\Enums\AppointmentType;
 use App\Models\Concerns\BelongsToCompany;
+use App\Models\Scopes\NonArchivedScope;
 use App\Support\TeamResolver;
 use Carbon\CarbonInterface;
 use Database\Factories\AppointmentFactory;
@@ -69,7 +70,10 @@ class Appointment extends Model
      */
     public function prospect(): BelongsTo
     {
-        return $this->belongsTo(Prospect::class);
+        // Archivé compris (lot 9, règle R5) : l'archivage range le prospect, il
+        // ne le cache pas. Filtrée, la relation revenait `null`, et le
+        // calendrier affichait « Prospect inconnu ».
+        return $this->belongsTo(Prospect::class)->withoutGlobalScope(NonArchivedScope::class);
     }
 
     /**
@@ -138,5 +142,19 @@ class Appointment extends Model
     public function scopeBetween(Builder $query, CarbonInterface $debut, CarbonInterface $fin): Builder
     {
         return $query->whereBetween('scheduled_at', [$debut, $fin]);
+    }
+
+    /**
+     * Seuls les rendez-vous des prospects actifs (lot 9, règle R5).
+     *
+     * Pour les indicateurs : un prospect archivé sort de tous les taux, ses
+     * rendez-vous aussi. Le calendrier, lui, ne l'applique pas.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeOfActiveProspects(Builder $query): Builder
+    {
+        return $query->whereIn('prospect_id', Prospect::query()->select('id'));
     }
 }

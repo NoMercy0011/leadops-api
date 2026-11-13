@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Exceptions\ArchivedReadOnly;
 use App\Models\Prospect;
 use App\Models\User;
 use App\Support\TeamResolver;
@@ -32,7 +33,7 @@ class ProspectPolicy
 
     public function update(User $user, Prospect $prospect): bool
     {
-        return $this->estDansSonPerimetre($user, $prospect);
+        return $this->peutEcrire($this->estDansSonPerimetre($user, $prospect), $prospect);
     }
 
     /**
@@ -42,8 +43,33 @@ class ProspectPolicy
      */
     public function assign(User $user, Prospect $prospect): bool
     {
+        return $this->peutEcrire($this->archive($user, $prospect), $prospect);
+    }
+
+    /**
+     * Archiver et désarchiver : même droit que l'affectation, mais sans la
+     * garde de lecture seule — c'est précisément le geste qui la lève.
+     */
+    public function archive(User $user, Prospect $prospect): bool
+    {
         return ($user->isAdminClient() || $user->isManager())
             && $this->estDansSonPerimetre($user, $prospect);
+    }
+
+    /**
+     * Le droit de rôle se lit d'abord, la lecture seule ensuite (lot 9,
+     * règle R3) : un prospect archivé, ou dont le projet l'est, refuse
+     * l'écriture.
+     *
+     * @throws ArchivedReadOnly
+     */
+    private function peutEcrire(bool $droitDeRole, Prospect $prospect): bool
+    {
+        if ($droitDeRole) {
+            ArchivedReadOnly::guard($prospect);
+        }
+
+        return $droitDeRole;
     }
 
     public function bulkAssign(User $user): bool

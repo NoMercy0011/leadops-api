@@ -64,7 +64,7 @@ class ProspectActionController extends Controller
         // statistiques est une décision d'encadrement. Un commercial qui
         // pourrait archiver retirerait ses propres dossiers en souffrance du
         // périmètre de son manager.
-        $this->authorize('assign', $prospect);
+        $this->authorize('archive', $prospect);
 
         $donnees = $request->validate([
             'archived' => ['required', 'boolean'],

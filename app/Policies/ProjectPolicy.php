@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Exceptions\ArchivedReadOnly;
 use App\Models\Project;
 use App\Models\User;
 use App\Support\TeamResolver;
@@ -87,12 +88,32 @@ class ProjectPolicy
      */
     public function managePipeline(User $user, Project $project): bool
     {
-        return $user->isAdminClient();
+        return $this->peutEcrire($user->isAdminClient(), $project);
     }
 
     public function manageMembers(User $user, Project $project): bool
     {
-        return $user->isAdminClient();
+        return $this->peutEcrire($user->isAdminClient(), $project);
+    }
+
+    /**
+     * Le droit de rôle se lit d'abord : un rôle sans droit reçoit 403, pas
+     * l'explication de l'archivage. Ensuite seulement, un projet archivé
+     * refuse l'écriture (lot 9, règle R3).
+     *
+     * `update` n'y passe pas : le changement de statut doit rester possible
+     * sur un projet archivé, pour le réactiver. Le contrôleur applique la
+     * même garde aux autres champs.
+     *
+     * @throws ArchivedReadOnly
+     */
+    private function peutEcrire(bool $droitDeRole, Project $project): bool
+    {
+        if ($droitDeRole) {
+            ArchivedReadOnly::guard($project);
+        }
+
+        return $droitDeRole;
     }
 
     /**

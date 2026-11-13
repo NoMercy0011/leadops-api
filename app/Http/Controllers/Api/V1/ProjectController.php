@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\ProjectStatus;
+use App\Exceptions\ArchivedReadOnly;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreProjectRequest;
 use App\Http\Resources\ProjectResource;
@@ -119,10 +120,25 @@ class ProjectController extends Controller
             'status' => ['sometimes', Rule::enum(ProjectStatus::class)],
         ]);
 
+        $ancienStatut = $project->status;
+        $nouveauStatut = isset($donnees['status']) ? ProjectStatus::from($donnees['status']) : $ancienStatut;
+
+        // Un projet archivé n'accepte que son changement de statut (lot 9,
+        // règle R3) : c'est le geste qui le réactive.
+        if (array_diff(array_keys($donnees), ['status']) !== []) {
+            ArchivedReadOnly::guard($project);
+        }
+
+        // Quitter l'archive reprend une place dans le plafond : elle se
+        // contrôle comme une création (lot 9, règle R2).
+        if ($ancienStatut->isArchived() && ! $nouveauStatut->isArchived()) {
+            $company = $request->user()->company;
+            $this->limits->assertCanCreate($company, 'projects');
+        }
+
         // Le changement de statut est journalisé à part : « archivé » et
         // « renommé » n'appellent pas la même lecture, et les mêler dans un
         // seul événement obligerait l'écran à fouiller le payload.
-        $ancienStatut = $project->status;
         $avant = $project->only(['name', 'product', 'target', 'description', 'variant_id']);
 
         $project->update($donnees);

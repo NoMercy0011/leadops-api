@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ProjectStatus;
 use App\Exceptions\SubscriptionLimitReached;
 use App\Models\Company;
 use App\Models\Project;
@@ -139,18 +140,30 @@ final class SubscriptionLimitService
             ->count();
     }
 
+    /**
+     * Un projet archivé ne compte pas (lot 9, décision D4) : un projet ne se
+     * supprime plus, et sans place libérée un client Starter resterait bloqué
+     * à vie. La réactivation contrôle donc le plafond, comme une création.
+     */
     private function countProjects(Company $company): int
     {
         return Project::query()
             ->acrossAllCompanies()
             ->where('company_id', $company->id)
+            ->where('status', '!=', ProjectStatus::Archived->value)
             ->count();
     }
 
+    /**
+     * Un prospect archivé compte (lot 9, décision D1). `withArchived()` est
+     * indispensable : `NonArchivedScope` est global, et sans lui archiver puis
+     * recréer permettait de dépasser le plan sans limite.
+     */
     private function countProspects(Company $company): int
     {
         return Prospect::query()
             ->acrossAllCompanies()
+            ->withArchived()
             ->where('company_id', $company->id)
             ->count();
     }

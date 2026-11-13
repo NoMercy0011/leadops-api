@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Exceptions\ArchivedReadOnly;
 use App\Exceptions\ErasedReadOnly;
+use App\Models\Project;
 use App\Models\Prospect;
 use App\Models\User;
 use App\Support\TeamResolver;
@@ -134,8 +135,11 @@ class ProspectPolicy
 
         // Un prospect non affecté reste dans le périmètre : c'est celui qu'un
         // manager doit pouvoir distribuer et qu'un commercial peut réclamer.
+        // Pour un manager, seulement dans un projet de son équipe (lot 9,
+        // règle R6) — la même borne que `Prospect::visibleTo`.
         if ($prospect->assigned_user_id === null) {
-            return true;
+            return ! $user->isManager()
+                || Project::query()->visibleTo($user)->whereKey($prospect->project_id)->exists();
         }
 
         return TeamResolver::scopeUserIds($user)->contains($prospect->assigned_user_id);

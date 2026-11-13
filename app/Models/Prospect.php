@@ -189,10 +189,22 @@ class Prospect extends Model
         // Les prospects non affectés restent visibles de l'équipe : ce sont
         // ceux qu'un manager doit pouvoir distribuer, et les masquer les
         // rendrait introuvables jusqu'à ce que quelqu'un les réclame.
+        //
+        // Pour un manager, seulement dans les projets de son équipe (lot 9,
+        // règle R6) : sans cette borne, il voyait et archivait les
+        // non-affectés de toute l'entreprise.
         return $query->where(
             fn (Builder $q) => $q
                 ->whereIn('assigned_user_id', $ids)
-                ->orWhereNull('assigned_user_id')
+                ->orWhere(fn (Builder $nonAffectes) => $nonAffectes
+                    ->whereNull('assigned_user_id')
+                    ->when(
+                        $viewer->isManager(),
+                        fn (Builder $borne) => $borne->whereIn(
+                            'project_id',
+                            Project::query()->visibleTo($viewer)->select('projects.id'),
+                        ),
+                    ))
         );
     }
 

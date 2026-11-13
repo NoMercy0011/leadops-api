@@ -141,21 +141,25 @@ class ProjectController extends Controller
         // seul événement obligerait l'écran à fouiller le payload.
         $avant = $project->only(['name', 'product', 'target', 'description', 'variant_id']);
 
-        $project->update($donnees);
+        // La modification et sa trace au journal réussissent ou échouent
+        // ensemble (lot 9, règle R7).
+        DB::transaction(function () use ($project, $donnees, $ancienStatut, $avant): void {
+            $project->update($donnees);
 
-        if (array_key_exists('status', $donnees) && $project->status !== $ancienStatut) {
-            $this->journal->statusChanged(
+            if (array_key_exists('status', $donnees) && $project->status !== $ancienStatut) {
+                $this->journal->statusChanged(
+                    $project,
+                    $ancienStatut->label(),
+                    $project->status->label(),
+                );
+            }
+
+            $this->journal->projectUpdated(
                 $project,
-                $ancienStatut->label(),
-                $project->status->label(),
+                $avant,
+                $project->only(['name', 'product', 'target', 'description', 'variant_id']),
             );
-        }
-
-        $this->journal->projectUpdated(
-            $project,
-            $avant,
-            $project->only(['name', 'product', 'target', 'description', 'variant_id']),
-        );
+        });
 
         return new ProjectResource($project->load(['variant', 'stages', 'members']));
     }

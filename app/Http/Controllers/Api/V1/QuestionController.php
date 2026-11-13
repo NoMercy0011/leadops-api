@@ -12,6 +12,7 @@ use App\Services\QuestionnaireService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -37,9 +38,15 @@ class QuestionController extends Controller
 
         $donnees = $this->valider($request);
 
-        $question = $this->questionnaire->createQuestion($project, $donnees);
+        // La modification et sa trace au journal réussissent ou échouent
+        // ensemble (lot 9, règle R7).
+        $question = DB::transaction(function () use ($project, $donnees) {
+            $question = $this->questionnaire->createQuestion($project, $donnees);
 
-        $this->journal->questionAdded($question);
+            $this->journal->questionAdded($question);
+
+            return $question;
+        });
 
         return (new QuestionResource($question))
             ->response()
@@ -56,9 +63,13 @@ class QuestionController extends Controller
         // réponses déjà collectées, et le journal doit dire de quoi vers quoi.
         $ancienLibelle = $question->label;
 
-        $misAJour = $this->questionnaire->updateQuestion($question, $donnees);
+        $misAJour = DB::transaction(function () use ($question, $donnees, $ancienLibelle) {
+            $misAJour = $this->questionnaire->updateQuestion($question, $donnees);
 
-        $this->journal->questionUpdated($misAJour, $ancienLibelle);
+            $this->journal->questionUpdated($misAJour, $ancienLibelle);
+
+            return $misAJour;
+        });
 
         return new QuestionResource($misAJour);
     }
@@ -88,12 +99,14 @@ class QuestionController extends Controller
     {
         $this->authorize('managePipeline', $question->project);
 
-        $question->delete();
+        DB::transaction(function () use ($question): void {
+            $question->delete();
 
-        // Écrit après la suppression douce : la question quitte le formulaire
-        // mais ses réponses restent lisibles, et c'est justement l'écart que le
-        // journal doit rendre explicable.
-        $this->journal->questionRemoved($question);
+            // Écrit après la suppression douce : la question quitte le
+            // formulaire mais ses réponses restent lisibles, et c'est justement
+            // l'écart que le journal doit rendre explicable.
+            $this->journal->questionRemoved($question);
+        });
 
         return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
     }

@@ -11,6 +11,7 @@ use App\Models\Subscription;
 use App\Models\User;
 use App\Services\PipelineService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -201,5 +202,35 @@ class ProjectJournalTest extends TestCase
         $this->actingAs($adminB)
             ->getJson("/api/v1/projects/{$projetA->id}/activities")
             ->assertNotFound();
+    }
+
+    /**
+     * Lot 9, règle R7 : la modification et sa trace au journal réussissent ou
+     * échouent ensemble. Avant, le journal s'écrivait après coup, hors
+     * transaction : s'il échouait, la modification restait faite, sans trace.
+     *
+     * La panne est simulée sur l'écriture de `ProjectActivity`, au point exact
+     * où le journal écrit.
+     */
+    public function test_une_modification_dont_la_trace_echoue_est_annulee(): void
+    {
+        $projet = $this->projet();
+        $admin = User::factory()->adminClient()->create(['company_id' => $projet->company_id]);
+        $etapesAvant = $projet->stages()->count();
+        $nomAvant = $projet->name;
+
+        ProjectActivity::creating(function (): void {
+            throw new RuntimeException('journal indisponible');
+        });
+
+        $this->actingAs($admin)
+            ->postJson("/api/v1/projects/{$projet->id}/stages", ['name' => 'Relance'])
+            ->assertStatus(500);
+        $this->actingAs($admin)
+            ->patchJson("/api/v1/projects/{$projet->id}", ['name' => 'Nom jamais journalisé'])
+            ->assertStatus(500);
+
+        $this->assertSame($etapesAvant, $projet->stages()->count());
+        $this->assertSame($nomAvant, $projet->fresh()?->name);
     }
 }

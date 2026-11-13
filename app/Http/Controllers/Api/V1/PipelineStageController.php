@@ -50,14 +50,21 @@ class PipelineStageController extends Controller
 
         $this->assertTerminalitéCohérente($project, $donnees);
 
-        $stage = PipelineStage::query()->create([
-            ...$donnees,
-            'company_id' => $project->company_id,
-            'project_id' => $project->id,
-            'position' => $this->pipeline->nextPosition($project),
-        ]);
+        // La modification et sa trace au journal réussissent ou échouent
+        // ensemble (lot 9, règle R7) : une étape ajoutée sans trace ferait
+        // mentir le journal du projet.
+        $stage = DB::transaction(function () use ($donnees, $project) {
+            $stage = PipelineStage::query()->create([
+                ...$donnees,
+                'company_id' => $project->company_id,
+                'project_id' => $project->id,
+                'position' => $this->pipeline->nextPosition($project),
+            ]);
 
-        $this->journal->stageAdded($stage);
+            $this->journal->stageAdded($stage);
+
+            return $stage;
+        });
 
         return (new PipelineStageResource($stage))
             ->response()
@@ -89,9 +96,11 @@ class PipelineStageController extends Controller
         // journal doit pouvoir dire de quoi vers quoi.
         $ancienNom = $stage->name;
 
-        $stage->update($donnees);
+        DB::transaction(function () use ($stage, $donnees, $ancienNom): void {
+            $stage->update($donnees);
 
-        $this->journal->stageUpdated($stage->fresh(), $ancienNom);
+            $this->journal->stageUpdated($stage->fresh() ?? $stage, $ancienNom);
+        });
 
         return new PipelineStageResource($stage->fresh());
     }
@@ -108,9 +117,11 @@ class PipelineStageController extends Controller
             'stages.*' => ['integer'],
         ]);
 
-        $this->pipeline->reorder($project, $donnees['stages']);
+        DB::transaction(function () use ($project, $donnees): void {
+            $this->pipeline->reorder($project, $donnees['stages']);
 
-        $this->journal->stagesReordered($project->fresh());
+            $this->journal->stagesReordered($project->fresh() ?? $project);
+        });
 
         return PipelineStageResource::collection($project->stages()->get());
     }
@@ -164,9 +175,9 @@ class PipelineStageController extends Controller
                     });
 
                 $stage->delete();
-            });
 
-            $this->journal->stageRemoved($stage->project, $stage->name, $destination->name);
+                $this->journal->stageRemoved($stage->project, $stage->name, $destination->name);
+            });
 
             return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
         }
@@ -174,9 +185,11 @@ class PipelineStageController extends Controller
         $projet = $stage->project;
         $nom = $stage->name;
 
-        $stage->delete();
+        DB::transaction(function () use ($stage, $projet, $nom): void {
+            $stage->delete();
 
-        $this->journal->stageRemoved($projet, $nom, null);
+            $this->journal->stageRemoved($projet, $nom, null);
+        });
 
         return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
     }

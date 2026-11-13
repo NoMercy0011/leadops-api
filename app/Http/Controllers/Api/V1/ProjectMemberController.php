@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Services\ProjectJournal;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class ProjectMemberController extends Controller
@@ -50,13 +51,17 @@ class ProjectMemberController extends Controller
         // dirait plus rien.
         $avant = $project->members()->pluck('name')->all();
 
-        $project->members()->sync($donnees['member_ids']);
+        // La modification et sa trace au journal réussissent ou échouent
+        // ensemble (lot 9, règle R7).
+        DB::transaction(function () use ($project, $donnees, $avant): void {
+            $project->members()->sync($donnees['member_ids']);
 
-        $this->journal->membersChanged(
-            $project,
-            $avant,
-            $project->members()->pluck('name')->all(),
-        );
+            $this->journal->membersChanged(
+                $project,
+                $avant,
+                $project->members()->pluck('name')->all(),
+            );
+        });
 
         return UserResource::collection($project->members()->orderBy('name')->get());
     }

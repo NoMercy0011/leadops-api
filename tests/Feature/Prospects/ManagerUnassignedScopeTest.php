@@ -117,4 +117,37 @@ class ManagerUnassignedScopeTest extends TestCase
 
         $this->actingAs($admin)->getJson('/api/v1/prospects')->assertOk()->assertJsonCount(2, 'data');
     }
+
+    /**
+     * La borne joint des sous-requêtes de projet ; les rapports joignent
+     * `pipeline_stages`, qui porte aussi un `project_id`. Une colonne non
+     * qualifiée rendait le tableau de bord du manager en erreur 500.
+     */
+    public function test_le_tableau_de_bord_et_les_rapports_du_manager_repondent(): void
+    {
+        Prospect::factory()->forProject($this->projetEquipe)->unassigned()->create();
+
+        $this->actingAs($this->manager)->getJson('/api/v1/dashboard')->assertOk();
+        $this->actingAs($this->manager)->getJson('/api/v1/reports')->assertOk();
+    }
+
+    /**
+     * Correction C9 du lot 9 : le commercial, lui aussi, ne voit les
+     * non-affectés que dans les projets dont il est membre.
+     */
+    public function test_le_commercial_ne_voit_que_les_non_affectes_de_ses_projets(): void
+    {
+        $visible = Prospect::factory()->forProject($this->projetEquipe)->unassigned()->create();
+        $cache = Prospect::factory()->forProject($this->projetHorsEquipe)->unassigned()->create();
+        $commercial = $this->projetEquipe->members()->firstOrFail();
+
+        /** @var list<array{id: int}> $liste */
+        $liste = $this->actingAs($commercial)->getJson('/api/v1/prospects')->assertOk()->json('data');
+        $ids = collect($liste)->pluck('id');
+
+        $this->assertTrue($ids->contains($visible->id));
+        $this->assertFalse($ids->contains($cache->id));
+
+        $this->actingAs($commercial)->getJson("/api/v1/prospects/{$cache->id}")->assertForbidden();
+    }
 }

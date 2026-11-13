@@ -190,20 +190,20 @@ class Prospect extends Model
         // ceux qu'un manager doit pouvoir distribuer, et les masquer les
         // rendrait introuvables jusqu'à ce que quelqu'un les réclame.
         //
-        // Pour un manager, seulement dans les projets de son équipe (lot 9,
-        // règle R6) : sans cette borne, il voyait et archivait les
-        // non-affectés de toute l'entreprise.
+        // Mais seulement dans les projets ouverts à l'utilisateur (lot 9,
+        // règle R6 et correction C9) : ceux de son équipe pour un manager,
+        // ceux dont il est membre pour un commercial. Sans cette borne, l'un
+        // et l'autre voyaient les non-affectés de toute l'entreprise.
+        // Colonnes qualifiées : les rapports joignent `pipeline_stages`, qui a
+        // aussi un `project_id`, et la condition deviendrait ambiguë.
         return $query->where(
             fn (Builder $q) => $q
-                ->whereIn('assigned_user_id', $ids)
+                ->whereIn($q->qualifyColumn('assigned_user_id'), $ids)
                 ->orWhere(fn (Builder $nonAffectes) => $nonAffectes
-                    ->whereNull('assigned_user_id')
-                    ->when(
-                        $viewer->isManager(),
-                        fn (Builder $borne) => $borne->whereIn(
-                            'project_id',
-                            Project::query()->visibleTo($viewer)->select('projects.id'),
-                        ),
+                    ->whereNull($nonAffectes->qualifyColumn('assigned_user_id'))
+                    ->whereIn(
+                        $nonAffectes->qualifyColumn('project_id'),
+                        Project::query()->visibleTo($viewer)->select('projects.id'),
                     ))
         );
     }

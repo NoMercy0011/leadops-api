@@ -52,6 +52,9 @@ class ProspectScopeTest extends TestCase
         $projet = $this->projet();
         $commercial = User::factory()->commercial()->create(['company_id' => $projet->company_id]);
         $collegue = User::factory()->commercial()->create(['company_id' => $projet->company_id]);
+        // Membre du projet : les non-affectés ne sont visibles que dans les
+        // projets ouverts au commercial (lot 9, correction C9).
+        $projet->members()->attach($commercial->id);
 
         Prospect::factory()->forProject($projet)->assignedTo($commercial)->count(2)->create();
         Prospect::factory()->forProject($projet)->assignedTo($collegue)->count(3)->create();

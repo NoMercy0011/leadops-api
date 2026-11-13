@@ -135,11 +135,10 @@ class ProspectPolicy
 
         // Un prospect non affecté reste dans le périmètre : c'est celui qu'un
         // manager doit pouvoir distribuer et qu'un commercial peut réclamer.
-        // Pour un manager, seulement dans un projet de son équipe (lot 9,
-        // règle R6) — la même borne que `Prospect::visibleTo`.
+        // Seulement dans un projet ouvert à l'utilisateur (lot 9, règle R6 et
+        // correction C9) — la même borne que `Prospect::visibleTo`.
         if ($prospect->assigned_user_id === null) {
-            return ! $user->isManager()
-                || Project::query()->visibleTo($user)->whereKey($prospect->project_id)->exists();
+            return Project::query()->visibleTo($user)->whereKey($prospect->project_id)->exists();
         }
 
         return TeamResolver::scopeUserIds($user)->contains($prospect->assigned_user_id);

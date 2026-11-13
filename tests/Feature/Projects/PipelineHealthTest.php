@@ -12,7 +12,9 @@ use App\Models\ProspectActivity;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Services\PipelineService;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -250,5 +252,38 @@ class PipelineHealthTest extends TestCase
         $this->actingAs($adminB)
             ->getJson("/api/v1/projects/{$projetA->id}/pipeline-health")
             ->assertNotFound();
+    }
+
+    /**
+     * Lot 9, faille F9 : la requête des durées passait un paramètre par
+     * prospect visible. Les requêtes préparées natives de MariaDB plafonnent à
+     * 65 535 paramètres, et le plan Enterprise est illimité : au-delà, l'écran
+     * tombait.
+     *
+     * Plutôt que de charger 65 536 lignes, le test vérifie la cause : le
+     * nombre de paramètres ne dépend plus du nombre de prospects.
+     */
+    public function test_la_requete_des_durees_ne_grandit_pas_avec_le_nombre_de_prospects(): void
+    {
+        $projet = $this->projet();
+        $admin = User::factory()->adminClient()->create(['company_id' => $projet->company_id]);
+        $etapes = $projet->stages()->orderBy('position')->get();
+        foreach (Prospect::factory()->forProject($projet)->count(40)->create() as $prospect) {
+            $this->deplacer($prospect, $etapes[0], $etapes[1], now()->subDay()->toDateTimeString());
+        }
+
+        $parametres = null;
+        DB::listen(function (QueryExecuted $requete) use (&$parametres): void {
+            if (str_contains($requete->sql, 'lag(a.occurred_at)')) {
+                $parametres = count($requete->bindings);
+            }
+        });
+
+        $this->actingAs($admin)
+            ->getJson("/api/v1/projects/{$projet->id}/pipeline-health")
+            ->assertOk();
+
+        $this->assertNotNull($parametres, 'la requête des durées doit avoir été exécutée');
+        $this->assertLessThan(10, $parametres);
     }
 }

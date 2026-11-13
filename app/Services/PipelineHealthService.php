@@ -74,22 +74,27 @@ class PipelineHealthService
     }
 
     /**
-     * Identifiants des prospects du projet visibles par cet utilisateur.
+     * Sous-requête des prospects du projet visibles par cet utilisateur.
      *
      * **Les requêtes brutes qui suivent échappent à CompanyScope**, qui est un
-     * global scope Eloquent. Elles partent donc de cette liste, obtenue par
-     * l'Eloquent cloisonné, plutôt que d'un `where('project_id', …)` qui
+     * global scope Eloquent. Elles partent donc de cette sous-requête, bâtie
+     * par l'Eloquent cloisonné, plutôt que d'un `where('project_id', …)` qui
      * franchirait la frontière d'entreprise si l'identifiant venait d'ailleurs.
      *
-     * @return list<int>
+     * Une sous-requête et non une liste d'identifiants (lot 9, faille F9) : la
+     * liste plaçait un paramètre par prospect, et les requêtes préparées
+     * natives plafonnent à 65 535 paramètres. Le plan Enterprise est illimité.
+     *
+     * @return array{0: string, 1: list<mixed>} le SQL et ses paramètres
      */
     private function prospectsVisibles(Project $project, User $viewer): array
     {
-        return Prospect::query()
+        $requete = Prospect::query()
             ->visibleTo($viewer)
             ->where('project_id', $project->id)
-            ->pluck('id')
-            ->all();
+            ->select('prospects.id');
+
+        return [$requete->toSql(), $requete->getBindings()];
     }
 
     /**
@@ -127,11 +132,7 @@ class PipelineHealthService
      */
     private function dureesMoyennes(Project $project, User $viewer): array
     {
-        $prospects = $this->prospectsVisibles($project, $viewer);
-
-        if ($prospects === []) {
-            return [];
-        }
+        [$visibles, $parametresVisibles] = $this->prospectsVisibles($project, $viewer);
 
         // `JSON_VALUE` n'apparaît qu'en projection, jamais en clause `WHERE` :
         // le filtre porte sur `prospect_id` et `type`, tous deux indexés. La
@@ -142,13 +143,13 @@ class PipelineHealthService
             'lag(a.occurred_at) over (partition by a.prospect_id order by a.occurred_at) as precedent '.
             'from prospect_activities a '.
             'inner join prospects p on p.id = a.prospect_id '.
-            'where a.type = ? and a.prospect_id in ('.implode(',', array_fill(0, count($prospects), '?')).')'.
+            'where a.type = ? and a.prospect_id in ('.$visibles.')'.
             ') as sejours'))
             ->selectRaw("json_value(payload, '$.from_id') as stage_id")
             ->selectRaw('avg(timestampdiff(second, coalesce(precedent, cree_le), occurred_at)) as secondes')
             ->selectRaw('count(*) as passages')
             ->groupBy('stage_id')
-            ->setBindings([ActivityType::StageChanged->value, ...$prospects])
+            ->setBindings([ActivityType::StageChanged->value, ...$parametresVisibles])
             ->get();
 
         $resultat = [];

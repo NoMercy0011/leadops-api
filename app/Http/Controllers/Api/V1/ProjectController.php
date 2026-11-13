@@ -10,6 +10,7 @@ use App\Http\Resources\ProjectResource;
 use App\Models\Project;
 use App\Services\PipelineService;
 use App\Services\ProjectJournal;
+use App\Services\ReportingService;
 use App\Services\SubscriptionLimitService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -160,6 +161,12 @@ class ProjectController extends Controller
                 $project->only(['name', 'product', 'target', 'description', 'variant_id']),
             );
         });
+
+        // Le tableau de bord compte les projets actifs : un changement de
+        // statut doit s'y voir sans attendre l'expiration du cache.
+        if ($project->status !== $ancienStatut) {
+            ReportingService::forgetCache($project->company_id);
+        }
 
         return new ProjectResource($project->load(['variant', 'stages', 'members']));
     }

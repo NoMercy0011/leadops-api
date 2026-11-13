@@ -147,7 +147,9 @@ final class ProspectImporter
             return false;
         }
 
+        // Archivés compris (lot 9), comme à la création unitaire.
         return Prospect::query()
+            ->withArchived()
             ->potentialDuplicatesOf($project->id, $telephone, $email)
             ->exists();
     }

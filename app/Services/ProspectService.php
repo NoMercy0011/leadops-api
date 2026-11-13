@@ -219,7 +219,10 @@ final class ProspectService
         // `company_id` est non nulle sur un projet : la relation est garantie.
         $pays = $project->company->default_country_code;
 
+        // Archivés compris (lot 9) : un contact rangé reste la même personne,
+        // et c'est lui qu'il faut désarchiver plutôt que le recréer.
         return Prospect::query()
+            ->withArchived()
             ->potentialDuplicatesOf(
                 $project->id,
                 ContactNormalizer::phone($phone, $pays),

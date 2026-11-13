@@ -30,8 +30,10 @@ class ProjectActivityController extends Controller
                 // qu'on vient vérifier.
                 ->orderByDesc('occurred_at')
                 ->orderByDesc('id')
-                ->limit(50)
-                ->get()
+                // Paginé par 50, comme le journal d'un prospect (lot 9, contrat
+                // §5) : figé à 50 lignes, l'historique au-delà devenait
+                // inaccessible.
+                ->paginate(50)
         );
     }
 }

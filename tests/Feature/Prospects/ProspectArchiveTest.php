@@ -245,4 +245,24 @@ class ProspectArchiveTest extends TestCase
             collect($this->journalDe($prospect))->where('type', 'archived')->count(),
         );
     }
+
+    /**
+     * Lot 9, point vert : un prospect archivé reste un doublon. Sans cela, on
+     * recréait la même personne au lieu de la désarchiver, et l'import la
+     * dupliquait sans rien signaler.
+     */
+    public function test_un_prospect_archive_est_signale_comme_doublon(): void
+    {
+        $prospect = Prospect::factory()->forProject($this->projet)->create([
+            'phone' => '034 12 345 67',
+            'phone_normalized' => '+261341234567',
+        ]);
+        $this->archiver($prospect);
+
+        $this->actingAs($this->admin)
+            ->getJson("/api/v1/prospects/duplicates?project_id={$this->projet->id}&phone=0341234567")
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $prospect->id)
+            ->assertJsonPath('data.0.is_archived', true);
+    }
 }

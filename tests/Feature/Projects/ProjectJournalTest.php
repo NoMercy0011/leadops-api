@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Projects;
 
+use App\Enums\ProjectActivityType;
 use App\Models\Company;
 use App\Models\Plan;
 use App\Models\Project;
@@ -232,5 +233,58 @@ class ProjectJournalTest extends TestCase
 
         $this->assertSame($etapesAvant, $projet->stages()->count());
         $this->assertSame($nomAvant, $projet->fresh()?->name);
+    }
+
+    /**
+     * Lot 9, contrat §5 : le journal est paginé par 50. Figé à 50 lignes,
+     * l'historique au-delà était inaccessible.
+     */
+    public function test_le_journal_se_pagine_par_cinquante(): void
+    {
+        $projet = $this->projet();
+        $admin = User::factory()->adminClient()->create(['company_id' => $projet->company_id]);
+        $avant = ProjectActivity::query()->acrossAllCompanies()->where('project_id', $projet->id)->count();
+
+        for ($i = 0; $i < 60 - $avant; $i++) {
+            ProjectActivity::query()->create([
+                'company_id' => $projet->company_id,
+                'project_id' => $projet->id,
+                'type' => ProjectActivityType::ProjectUpdated,
+                'payload' => ['fields' => ['name']],
+                'occurred_at' => now()->subMinutes($i),
+            ]);
+        }
+
+        $this->actingAs($admin)
+            ->getJson("/api/v1/projects/{$projet->id}/activities")
+            ->assertOk()
+            ->assertJsonCount(50, 'data')
+            ->assertJsonPath('meta.total', 60);
+
+        $this->actingAs($admin)
+            ->getJson("/api/v1/projects/{$projet->id}/activities?page=2")
+            ->assertOk()
+            ->assertJsonCount(10, 'data');
+    }
+
+    /**
+     * Lot 9, point vert : le tableau de bord compte les projets actifs, et
+     * restait faux jusqu'à l'expiration de son cache après un archivage.
+     */
+    public function test_archiver_un_projet_rafraichit_le_tableau_de_bord(): void
+    {
+        $projet = $this->projet();
+        $admin = User::factory()->adminClient()->create(['company_id' => $projet->company_id]);
+
+        $avant = $this->actingAs($admin)->getJson('/api/v1/dashboard')->assertOk()->json('data.active_projects');
+
+        $this->actingAs($admin)
+            ->patchJson("/api/v1/projects/{$projet->id}", ['status' => 'archived'])
+            ->assertOk();
+
+        $this->actingAs($admin)
+            ->getJson('/api/v1/dashboard')
+            ->assertOk()
+            ->assertJsonPath('data.active_projects', $avant - 1);
     }
 }

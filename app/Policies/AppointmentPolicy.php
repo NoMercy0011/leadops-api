@@ -2,7 +2,10 @@
 
 namespace App\Policies;
 
+use App\Exceptions\ArchivedReadOnly;
+use App\Exceptions\ErasedReadOnly;
 use App\Models\Appointment;
+use App\Models\Prospect;
 use App\Models\User;
 use App\Support\TeamResolver;
 
@@ -32,7 +35,7 @@ class AppointmentPolicy
 
     public function update(User $user, Appointment $appointment): bool
     {
-        return $this->estDansSonPerimetre($user, $appointment);
+        return $this->peutEcrire($this->estDansSonPerimetre($user, $appointment), $appointment);
     }
 
     /**
@@ -42,13 +45,34 @@ class AppointmentPolicy
      */
     public function assign(User $user, Appointment $appointment): bool
     {
-        return ($user->isAdminClient() || $user->isManager())
-            && $this->estDansSonPerimetre($user, $appointment);
+        return $this->peutEcrire(
+            ($user->isAdminClient() || $user->isManager()) && $this->estDansSonPerimetre($user, $appointment),
+            $appointment,
+        );
     }
 
     public function delete(User $user, Appointment $appointment): bool
     {
-        return $this->estDansSonPerimetre($user, $appointment);
+        return $this->peutEcrire($this->estDansSonPerimetre($user, $appointment), $appointment);
+    }
+
+    /**
+     * Le rendez-vous d'une fiche effacée, d'un prospect archivé ou d'un projet
+     * archivé ne s'écrit plus (revue du lot 9, règles R3 et R4) : un PATCH y
+     * remettait un lieu et des notes, donc des données personnelles. Le droit
+     * de rôle se lit d'abord, la lecture seule ensuite.
+     *
+     * @throws ErasedReadOnly
+     * @throws ArchivedReadOnly
+     */
+    private function peutEcrire(bool $droitDeRole, Appointment $appointment): bool
+    {
+        if ($droitDeRole) {
+            ErasedReadOnly::guard($appointment->prospect);
+            ArchivedReadOnly::guard($appointment->prospect);
+        }
+
+        return $droitDeRole;
     }
 
     private function estDansSonPerimetre(User $user, Appointment $appointment): bool
@@ -65,8 +89,11 @@ class AppointmentPolicy
 
         // Un rendez-vous sans commercial est à prendre : le masquer le rendrait
         // introuvable jusqu'à ce que quelqu'un le réclame.
+        // Il suit la visibilité de son prospect (revue du lot 9) : visible
+        // pour qui voit le prospect, caché pour les autres. Sans cette règle,
+        // il exposait son prospect à toute l'équipe, quel que soit le projet.
         if ($appointment->user_id === null) {
-            return true;
+            return Prospect::query()->withArchived()->visibleTo($user)->whereKey($appointment->prospect_id)->exists();
         }
 
         return TeamResolver::scopeUserIds($user)->contains($appointment->user_id);

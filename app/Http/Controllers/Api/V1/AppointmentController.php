@@ -99,7 +99,16 @@ class AppointmentController extends Controller
         // Le prospect détermine le projet : le laisser saisir séparément
         // ouvrirait la porte à un rendez-vous rattaché au mauvais projet, que
         // rien ne rattraperait ensuite.
-        $prospect = Prospect::query()->withArchived()->findOrFail($donnees['prospect_id']);
+        $prospect = Prospect::query()
+            ->withArchived()
+            ->visibleTo($request->user())
+            ->findOrFail($donnees['prospect_id']);
+
+        // Revue du lot 9 : le prospect n'était vérifié ni par le périmètre ni
+        // par le droit d'écriture, et la réponse renvoyait sa fiche complète.
+        // Le droit d'écriture applique aussi la lecture seule des fiches
+        // effacées et archivées.
+        $this->authorize('update', $prospect);
 
         $appointment = $this->rendezVous->create($prospect, $donnees);
 

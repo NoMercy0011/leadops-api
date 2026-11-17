@@ -138,7 +138,9 @@ class PipelineStageController extends Controller
             ]);
         }
 
-        $occupants = Prospect::query()->where('stage_id', $stage->id)->count();
+        // Archivés compris (revue du lot 9) : ils occupent l'étape au même
+        // titre, et la clé étrangère refusait sinon la suppression en 500.
+        $occupants = Prospect::query()->withArchived()->where('stage_id', $stage->id)->count();
 
         if ($occupants > 0) {
             // Une étape de repli est exigée plutôt qu'un déplacement d'office
@@ -166,6 +168,7 @@ class PipelineStageController extends Controller
                 // d'un prospect montrerait un saut inexpliqué, et les durées de
                 // cycle du lot 7 seraient calculées sur des étapes fantômes.
                 Prospect::query()
+                    ->withArchived()
                     ->where('stage_id', $stage->id)
                     ->with('stage')
                     ->chunkById(200, function ($prospects) use ($destination) {

@@ -126,10 +126,18 @@ class Appointment extends Model
         // Les rendez-vous sans commercial restent visibles : ce sont ceux qu'un
         // manager doit pouvoir attribuer, et les masquer les rendrait
         // introuvables.
+        // Un rendez-vous sans commercial suit la visibilité de son prospect
+        // (revue du lot 9). Sans cette règle, il exposait son prospect à toute
+        // l'équipe, quel que soit le projet.
         return $query->where(
             fn (Builder $q) => $q
-                ->whereIn('user_id', $ids)
-                ->orWhereNull('user_id')
+                ->whereIn($q->qualifyColumn('user_id'), $ids)
+                ->orWhere(fn (Builder $sansCommercial) => $sansCommercial
+                    ->whereNull($sansCommercial->qualifyColumn('user_id'))
+                    ->whereIn(
+                        $sansCommercial->qualifyColumn('prospect_id'),
+                        Prospect::query()->withArchived()->visibleTo($viewer)->select('prospects.id'),
+                    ))
         );
     }
 

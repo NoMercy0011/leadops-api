@@ -7,6 +7,7 @@ use App\Models\Prospect;
 use App\Models\Question;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Qualité des données d'un projet.
@@ -50,9 +51,12 @@ class DataQualityService
      */
     private function prospects(Project $project, User $viewer)
     {
+        // Sans les fiches effacées (revue du lot 9) : elles ne se corrigent
+        // plus, et resteraient comptées comme défauts pour toujours.
         return Prospect::query()
             ->visibleTo($viewer)
-            ->where('project_id', $project->id);
+            ->where('project_id', $project->id)
+            ->whereNull('erased_at');
     }
 
     /**
@@ -71,14 +75,39 @@ class DataQualityService
      */
     private function doublons(Project $project, User $viewer): array
     {
+        $colonnes = ['phone_normalized' => 'téléphone', 'email_normalized' => 'email'];
+
+        // Les comptes se font en SQL, et seuls les cinq premiers groupes
+        // chargent leurs membres (revue du lot 9, contrat §3) : une requête
+        // par groupe faisait des centaines d'allers-retours après un import.
+        $nombreDeGroupes = 0;
+        foreach (array_keys($colonnes) as $colonne) {
+            $nombreDeGroupes += DB::query()->fromSub($this->clesEnDouble($project, $viewer, $colonne), 'groupes')->count();
+        }
+
+        // Un même prospect peut apparaître dans deux groupes — même numéro
+        // avec l'un, même adresse avec l'autre. Le compte porte donc sur les
+        // identifiants distincts, sans quoi il dépasserait l'effectif du
+        // projet.
+        $impliques = (clone $this->prospects($project, $viewer))
+            ->where(function ($q) use ($colonnes, $project, $viewer): void {
+                foreach (array_keys($colonnes) as $colonne) {
+                    $q->orWhereIn($colonne, $this->clesEnDouble($project, $viewer, $colonne));
+                }
+            })
+            ->count();
+
         $groupes = [];
 
-        foreach (['phone_normalized' => 'téléphone', 'email_normalized' => 'email'] as $colonne => $libelle) {
-            $cles = (clone $this->prospects($project, $viewer))
-                ->whereNotNull($colonne)
-                ->where($colonne, '!=', '')
-                ->groupBy($colonne)
-                ->havingRaw('count(*) > 1')
+        foreach ($colonnes as $colonne => $libelle) {
+            $restant = self::EXEMPLES_MAX - count($groupes);
+            if ($restant <= 0) {
+                break;
+            }
+
+            $cles = $this->clesEnDouble($project, $viewer, $colonne)
+                ->orderBy($colonne)
+                ->limit($restant)
                 ->pluck($colonne)
                 ->all();
 
@@ -98,20 +127,27 @@ class DataQualityService
             }
         }
 
-        // Un même prospect peut apparaître dans deux groupes — même numéro
-        // avec l'un, même adresse avec l'autre. Le compte porte donc sur les
-        // identifiants distincts, sans quoi il dépasserait l'effectif du
-        // projet.
-        $impliques = collect($groupes)
-            ->flatMap(fn (array $groupe) => array_column($groupe['prospects'], 'id'))
-            ->unique()
-            ->count();
-
         return [
-            'groupes' => count($groupes),
+            'groupes' => $nombreDeGroupes,
             'prospects' => $impliques,
-            'exemples' => array_slice($groupes, 0, self::EXEMPLES_MAX),
+            'exemples' => $groupes,
         ];
+    }
+
+    /**
+     * Valeurs d'une colonne de rapprochement portées par au moins deux
+     * prospects du projet visibles par l'utilisateur.
+     *
+     * @return Builder<Prospect>
+     */
+    private function clesEnDouble(Project $project, User $viewer, string $colonne): Builder
+    {
+        return (clone $this->prospects($project, $viewer))
+            ->whereNotNull($colonne)
+            ->where($colonne, '!=', '')
+            ->groupBy($colonne)
+            ->havingRaw('count(*) > 1')
+            ->select($colonne);
     }
 
     /**

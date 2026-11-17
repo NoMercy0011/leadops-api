@@ -64,6 +64,7 @@ class ProspectErasureTest extends TestCase
             'email_normalized' => 'hery@example.mg',
             'address' => 'Lot II A 12, Antananarivo',
             'notes' => 'Préfère être appelé le matin.',
+            'source' => 'Recommandé par Mme Rasoa',
             'next_action_note' => 'Rappeler pour le devis',
         ]);
     }
@@ -86,7 +87,7 @@ class ProspectErasureTest extends TestCase
 
         $efface = $this->relire($prospect);
         $this->assertNotNull($efface->erased_at);
-        foreach (['last_name', 'company_name', 'phone', 'phone_normalized', 'email', 'email_normalized', 'address', 'notes', 'next_action_note'] as $champ) {
+        foreach (['last_name', 'company_name', 'phone', 'phone_normalized', 'email', 'email_normalized', 'address', 'notes', 'next_action_note', 'source'] as $champ) {
             $this->assertNull($efface->getAttribute($champ), "{$champ} doit être vidé");
         }
         $this->assertSame('', $efface->first_name);
@@ -242,6 +243,43 @@ class ProspectErasureTest extends TestCase
             ->patchJson("/api/v1/prospects/{$prospect->id}/archive", ['archived' => true])
             ->assertStatus(422)
             ->assertJsonPath('code', 'erasure.read_only');
+    }
+
+    /**
+     * Revue du lot 9 : une question supprimée (suppression douce) gardait ses
+     * réponses à l'effacement, et l'API les renvoyait encore.
+     */
+    public function test_les_reponses_d_une_question_supprimee_sont_aussi_videes(): void
+    {
+        $prospect = $this->prospect();
+        $naissance = Question::factory()->forProject($this->projet)->ofType(QuestionType::Date)->create();
+
+        $this->actingAs($this->admin)
+            ->putJson("/api/v1/prospects/{$prospect->id}/questionnaire", ['answers' => [$naissance->id => '1984-03-12']])
+            ->assertOk();
+        $this->actingAs($this->admin)->deleteJson("/api/v1/questions/{$naissance->id}")->assertNoContent();
+
+        $this->actingAs($this->admin)->postJson("/api/v1/prospects/{$prospect->id}/erase")->assertOk();
+
+        $this->assertSame(0, ProspectAnswer::query()->where('prospect_id', $prospect->id)->count());
+    }
+
+    /** Contrat §8 : les statistiques du projet ne bougent pas. */
+    public function test_les_indicateurs_sont_inchanges_apres_l_effacement(): void
+    {
+        $prospect = $this->prospect();
+        $prospect->forceFill(['converted_at' => now()->subDay(), 'qualified_at' => now()->subDays(3)])->save();
+        Prospect::factory()->forProject($this->projet)->count(3)->create();
+
+        $avant = $this->actingAs($this->admin)
+            ->getJson("/api/v1/reports?project_id={$this->projet->id}")->assertOk()->json('data.totals');
+
+        $this->actingAs($this->admin)->postJson("/api/v1/prospects/{$prospect->id}/erase")->assertOk();
+
+        $apres = $this->actingAs($this->admin)
+            ->getJson("/api/v1/reports?project_id={$this->projet->id}")->assertOk()->json('data.totals');
+
+        $this->assertSame($avant, $apres);
     }
 
     public function test_un_prospect_archive_peut_etre_efface(): void

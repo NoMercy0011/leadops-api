@@ -8,6 +8,7 @@ use App\Models\Appointment;
 use App\Models\Prospect;
 use App\Models\ProspectActivity;
 use App\Models\ProspectAnswer;
+use App\Models\Question;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -54,62 +55,83 @@ class ProspectErasureService
      */
     public function erase(Prospect $prospect): Collection
     {
-        if ($prospect->isErased()) {
-            throw new AlreadyErased;
-        }
+        // Tout se joue dans une transaction, la fiche verrouillée : deux
+        // effacements simultanés écrivaient sinon deux événements au journal
+        // (revue du lot 9). Le second attend le verrou, puis trouve la fiche
+        // déjà effacée.
+        return DB::transaction(function () use ($prospect): Collection {
+            $verrouille = Prospect::query()->withArchived()->lockForUpdate()->findOrFail($prospect->id);
 
-        // Le rapprochement se fait avant l'effacement : après, il n'y a plus
-        // rien à rapprocher.
-        $autresFiches = $this->autresFiches($prospect);
+            if ($verrouille->isErased()) {
+                throw new AlreadyErased;
+            }
 
-        DB::transaction(function () use ($prospect): void {
-            $prospect->forceFill([
-                'first_name' => '',
-                'last_name' => null,
-                'company_name' => null,
-                'phone' => null,
-                'email' => null,
-                'phone_normalized' => null,
-                'email_normalized' => null,
-                'address' => null,
-                'notes' => null,
-                'next_action_note' => null,
-                'erased_at' => now(),
-            ])->save();
+            // Le rapprochement se fait avant l'effacement : après, il n'y a
+            // plus rien à rapprocher.
+            $autresFiches = $this->autresFiches($verrouille);
 
-            ProspectAnswer::query()
-                ->where('prospect_id', $prospect->id)
-                ->whereHas('question', fn ($q) => $q->whereIn(
-                    'type',
-                    array_map(fn (QuestionType $t) => $t->value, self::QUESTIONS_IDENTIFIANTES),
-                ))
-                ->delete();
+            $this->anonymiser($verrouille);
 
-            Appointment::query()
-                ->where('prospect_id', $prospect->id)
-                ->update(['location' => null, 'notes' => null]);
+            $prospect->setRawAttributes($verrouille->getAttributes(), true);
 
-            ProspectActivity::query()
-                ->where('prospect_id', $prospect->id)
-                ->get()
-                ->each(function (ProspectActivity $activite): void {
-                    $payload = $activite->payload;
+            ReportingService::forgetCache($prospect->company_id);
 
-                    if (! is_array($payload) || array_intersect_key($payload, array_flip(self::CLES_LIBRES_DU_JOURNAL)) === []) {
-                        return;
-                    }
-
-                    $activite->forceFill([
-                        'payload' => array_diff_key($payload, array_flip(self::CLES_LIBRES_DU_JOURNAL)),
-                    ])->save();
-                });
-
-            $this->journal->erased($prospect);
+            return $autresFiches;
         });
+    }
 
-        ReportingService::forgetCache($prospect->company_id);
+    private function anonymiser(Prospect $prospect): void
+    {
+        $prospect->forceFill([
+            'first_name' => '',
+            'last_name' => null,
+            'company_name' => null,
+            'phone' => null,
+            'email' => null,
+            'phone_normalized' => null,
+            'email_normalized' => null,
+            'address' => null,
+            'notes' => null,
+            'next_action_note' => null,
+            // Texte libre, saisi ou importé : il peut nommer quelqu'un
+            // (« Recommandé par Mme Rasoa »). Décision R1 de la revue.
+            'source' => null,
+            'erased_at' => now(),
+        ])->save();
 
-        return $autresFiches;
+        // Les questions supprimées comprises (revue du lot 9) : la
+        // suppression d'une question est douce, et ses réponses restaient en
+        // base, renvoyées par le questionnaire de la fiche.
+        ProspectAnswer::query()
+            ->where('prospect_id', $prospect->id)
+            ->whereIn(
+                'question_id',
+                Question::withTrashed()
+                    ->whereIn('type', array_map(fn (QuestionType $t) => $t->value, self::QUESTIONS_IDENTIFIANTES))
+                    ->select('id'),
+            )
+            ->delete();
+
+        Appointment::query()
+            ->where('prospect_id', $prospect->id)
+            ->update(['location' => null, 'notes' => null]);
+
+        ProspectActivity::query()
+            ->where('prospect_id', $prospect->id)
+            ->get()
+            ->each(function (ProspectActivity $activite): void {
+                $payload = $activite->payload;
+
+                if (! is_array($payload) || array_intersect_key($payload, array_flip(self::CLES_LIBRES_DU_JOURNAL)) === []) {
+                    return;
+                }
+
+                $activite->forceFill([
+                    'payload' => array_diff_key($payload, array_flip(self::CLES_LIBRES_DU_JOURNAL)),
+                ])->save();
+            });
+
+        $this->journal->erased($prospect);
     }
 
     /**

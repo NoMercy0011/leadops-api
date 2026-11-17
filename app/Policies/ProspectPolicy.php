@@ -61,6 +61,10 @@ class ProspectPolicy
 
         if ($droit) {
             ErasedReadOnly::guard($prospect);
+            // Un projet archivé est en lecture seule : seul le projet se
+            // réactive, ses prospects ne s'archivent ni ne se désarchivent
+            // (décision R2 de la revue).
+            ArchivedReadOnly::guard($prospect->project);
         }
 
         return $droit;

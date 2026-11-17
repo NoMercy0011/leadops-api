@@ -138,8 +138,10 @@ class ProjectArchiveTest extends TestCase
                 'project_id' => $projet->id,
                 'first_name' => 'Zoé',
             ])
+            // Revue du lot 9, contrat §6 : un projet archivé répond par le
+            // code de la lecture seule, comme toute écriture sur lui.
             ->assertUnprocessable()
-            ->assertJsonValidationErrors('project_id');
+            ->assertJsonPath('code', 'archive.read_only');
 
         $this->assertSame(0, $projet->prospects()->count());
     }

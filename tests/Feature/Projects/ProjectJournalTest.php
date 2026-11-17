@@ -287,4 +287,47 @@ class ProjectJournalTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.active_projects', $avant - 1);
     }
+
+    /**
+     * Revue du lot 9, contrat §5 : chaque geste de configuration laisse son
+     * événement au journal. Six d'entre eux n'avaient aucun test.
+     */
+    public function test_chaque_geste_de_configuration_laisse_son_evenement(): void
+    {
+        $company = Company::factory()->create();
+        Subscription::factory()->for($company)->for(Plan::factory()->enterprise())->create();
+        $admin = User::factory()->adminClient()->create(['company_id' => $company->id]);
+
+        $projetId = $this->actingAs($admin)
+            ->postJson('/api/v1/projects', ['name' => 'Épargne Retraite'])
+            ->assertCreated()
+            ->json('data.id');
+        $projet = Project::query()->findOrFail($projetId);
+
+        $etapeId = $this->actingAs($admin)
+            ->postJson("/api/v1/projects/{$projet->id}/stages", ['name' => 'Relance'])
+            ->assertCreated()
+            ->json('data.id');
+
+        $ordre = $projet->stages()->orderByDesc('position')->pluck('id')->all();
+        $this->actingAs($admin)
+            ->patchJson("/api/v1/projects/{$projet->id}/stages/reorder", ['stages' => $ordre])
+            ->assertOk();
+
+        $this->actingAs($admin)->deleteJson("/api/v1/stages/{$etapeId}")->assertNoContent();
+
+        $questionId = $this->actingAs($admin)
+            ->postJson("/api/v1/projects/{$projet->id}/questions", ['type' => 'text', 'label' => 'Situation familiale'])
+            ->assertCreated()
+            ->json('data.id');
+        $this->actingAs($admin)
+            ->patchJson("/api/v1/questions/{$questionId}", ['label' => 'Situation de famille'])
+            ->assertOk();
+
+        $types = collect($this->journal($admin, $projet))->pluck('type');
+
+        foreach (['project_created', 'stage_added', 'stages_reordered', 'stage_removed', 'question_added', 'question_updated'] as $attendu) {
+            $this->assertTrue($types->contains($attendu), "l'événement {$attendu} manque au journal");
+        }
+    }
 }

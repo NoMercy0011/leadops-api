@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\ProjectStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ProspectActivityResource;
 use App\Http\Resources\ProspectResource;
@@ -74,9 +75,13 @@ class ProspectActionController extends Controller
         $archive = (bool) $donnees['archived'];
 
         if ($prospect->isArchived() !== $archive) {
-            $prospect->forceFill(['archived_at' => $archive ? now() : null])->save();
+            // L'horodatage et sa trace au journal réussissent ou échouent
+            // ensemble (revue du lot 9).
+            DB::transaction(function () use ($prospect, $archive, $donnees): void {
+                $prospect->forceFill(['archived_at' => $archive ? now() : null])->save();
 
-            $this->journal->archived($prospect, $archive, $donnees['motif'] ?? null);
+                $this->journal->archived($prospect, $archive, $donnees['motif'] ?? null);
+            });
 
             // Les taux changent : le tableau de bord doit le refléter sans
             // attendre l'expiration du cache.
@@ -128,9 +133,14 @@ class ProspectActionController extends Controller
         // `visibleTo` écarte silencieusement ceux qui sortent du périmètre du
         // demandeur, de sorte qu'un manager ne peut pas réaffecter l'équipe
         // d'un autre en glissant des identifiants dans la liste.
+        // Ni fiche effacée, ni prospect d'un projet archivé (revue du lot 9,
+        // règles R3 et R4) : ils remontent dans les ignorés, comme ceux qui
+        // sortent du périmètre.
         $prospects = Prospect::query()
             ->visibleTo($request->user())
             ->whereKey($donnees['prospect_ids'])
+            ->whereNull('erased_at')
+            ->whereHas('project', fn ($q) => $q->where('status', '!=', ProjectStatus::Archived->value))
             ->with('assignedUser')
             ->get();
 

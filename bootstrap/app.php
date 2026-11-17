@@ -7,6 +7,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -31,4 +32,18 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        // Tout refus d'autorisation porte le code stable du contrat (revue du
+        // lot 9) : l'écran distingue les refus par leur code, jamais par le
+        // message, et le message de Laravel est en anglais.
+        $exceptions->render(function (AccessDeniedHttpException $e, Request $request) {
+            if (! ($request->is('api/*') || $request->expectsJson())) {
+                return null;
+            }
+
+            return response()->json([
+                'code' => 'auth.forbidden',
+                'message' => "Vous n'avez pas le droit d'effectuer cette action.",
+            ], 403);
+        });
     })->create();

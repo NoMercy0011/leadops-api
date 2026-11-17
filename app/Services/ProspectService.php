@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\ArchivedReadOnly;
 use App\Models\PipelineStage;
 use App\Models\Project;
 use App\Models\Prospect;
@@ -37,6 +38,10 @@ final class ProspectService
         // La garde est ici plutôt que dans le contrôleur : la création passe
         // aussi par l'import CSV, et deux points d'entrée finiraient par
         // diverger.
+        // Un projet archivé répond par le code du contrat (§6), comme toute
+        // écriture sur lui ; suspendu ou terminé, par la validation ci-dessous.
+        ArchivedReadOnly::guard($project);
+
         if (! $project->status->acceptsNewProspects()) {
             throw ValidationException::withMessages([
                 'project_id' => "Le projet « {$project->name} » est {$project->status->label()} ".

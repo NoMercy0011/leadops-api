@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\UserRole;
 use App\Models\Concerns\BelongsToCompany;
+use App\Support\TeamResolver;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -99,9 +100,9 @@ class User extends Authenticatable
     {
         return match ($viewer->role) {
             UserRole::SuperAdmin, UserRole::AdminClient => $query,
-            UserRole::Manager => $query->where(function (Builder $q) use ($viewer) {
-                $q->where('manager_id', $viewer->id)->orWhere('id', $viewer->id);
-            }),
+            // Par TeamResolver, seul lecteur de `manager_id` (couture §3.8 ;
+            // revue du lot 10, la lecture était directe ici).
+            UserRole::Manager => $query->whereKey(TeamResolver::scopeUserIds($viewer)->all()),
             UserRole::Commercial => $query->whereKey($viewer->id),
         };
     }

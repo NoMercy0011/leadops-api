@@ -74,4 +74,28 @@ class FilterOptionsTest extends TestCase
             ->assertJsonCount(1, 'data.projects')
             ->assertJsonPath('data.projects.0.id', $sien->id);
     }
+
+    public function test_un_manager_ne_voit_que_son_equipe(): void
+    {
+        $manager = User::factory()->manager()->forCompany($this->company)->create();
+        $sien = User::factory()->commercial()->forCompany($this->company)->managedBy($manager)->create();
+        $autreManager = User::factory()->manager()->forCompany($this->company)->create();
+        User::factory()->commercial()->forCompany($this->company)->managedBy($autreManager)->create();
+
+        /** @var list<array{id: int}> $users */
+        $users = $this->actingAs($manager)->getJson('/api/v1/options')->assertOk()->json('data.users');
+        $ids = array_column($users, 'id');
+        sort($ids);
+        $attendus = [$manager->id, $sien->id];
+        sort($attendus);
+
+        $this->assertSame($attendus, $ids);
+    }
+
+    public function test_le_super_admin_est_refuse(): void
+    {
+        $super = User::factory()->superAdmin()->create();
+
+        $this->actingAs($super)->getJson('/api/v1/options')->assertForbidden();
+    }
 }

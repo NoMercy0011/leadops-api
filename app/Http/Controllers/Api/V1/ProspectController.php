@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Prospect;
 use App\Services\ProspectService;
 use App\Services\SubscriptionLimitService;
+use App\Support\PageSize;
 use App\Support\ProspectListFilter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -32,7 +33,7 @@ class ProspectController extends Controller
             // Dernière interaction dérivée du journal plutôt que stockée.
             ->withMax('activities', 'occurred_at')
             ->orderByDesc('updated_at')
-            ->paginate((int) $request->integer('per_page', 25))
+            ->paginate(PageSize::from($request))
             ->withQueryString();
 
         // Le résumé porte sur le filtre entier, pas sur la page affichée :

@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\Auth\LogoutController;
 use App\Http\Controllers\Api\V1\Auth\MeController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
 use App\Http\Controllers\Api\V1\DataQualityController;
+use App\Http\Controllers\Api\V1\FilterOptionsController;
 use App\Http\Controllers\Api\V1\PipelineHealthController;
 use App\Http\Controllers\Api\V1\PipelineStageController;
 use App\Http\Controllers\Api\V1\ProjectActivityController;
@@ -93,6 +94,9 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::post('users', [UserController::class, 'store'])->name('users.store');
 
             // Variantes — vocabulaire de reporting propre à l'entreprise.
+            // Options des filtres, tout le périmètre sans pagination (lot 10, R2).
+            Route::get('options', FilterOptionsController::class)->name('options');
+
             Route::get('variants', [VariantController::class, 'index'])->name('variants.index');
             Route::post('variants', [VariantController::class, 'store'])->name('variants.store');
             Route::patch('variants/{variant}', [VariantController::class, 'update'])->name('variants.update');

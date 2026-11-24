@@ -35,8 +35,8 @@ class FilterOptionsController extends Controller
                 'users' => User::query()
                     ->visibleTo($viewer)
                     ->orderBy('name')
-                    ->get(['id', 'name'])
-                    ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name])
+                    ->get(['id', 'name', 'role'])
+                    ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'role' => $u->role->value])
                     ->values(),
             ],
         ]);

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Project;
 use App\Models\Prospect;
+use App\Services\DashboardInsights;
 use App\Services\ReportingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,8 +29,24 @@ class ReportController extends Controller
         // tableau de bord est celui de la plateforme, au back-office.
         $this->authorize('viewAny', Prospect::class);
 
+        // Lot 12 : période et projet de l'entonnoir. Un projet inconnu ou hors
+        // périmètre est ignoré par le service, sans erreur.
+        $valide = $request->validate([
+            'period' => ['sometimes', 'string', 'in:'.implode(',', array_keys(DashboardInsights::PERIODES))],
+            'funnel_project_id' => ['sometimes', 'integer'],
+        ]);
+
         return response()->json([
-            'data' => $this->reporting->cachedDashboard($request->user()),
+            'data' => $this->reporting->cachedDashboard(
+                $request->user(),
+                $valide['period'] ?? '30d',
+                // Résolu avant la clé de cache (revue du lot 12) : un identifiant
+                // hors périmètre retombe sur le défaut, sans créer d'entrée.
+                isset($valide['funnel_project_id'])
+                    && Project::query()->visibleTo($request->user())->whereKey((int) $valide['funnel_project_id'])->exists()
+                    ? (int) $valide['funnel_project_id']
+                    : null,
+            ),
         ]);
     }
 

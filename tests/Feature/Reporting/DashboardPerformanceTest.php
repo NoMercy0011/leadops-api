@@ -82,11 +82,12 @@ class DashboardPerformanceTest extends TestCase
         $this->assertCount(5, $tableau['by_project']);
 
         // Le nombre de requêtes ne doit pas croître avec le nombre de projets.
-        // Vingt est large et laisse la place à une évolution raisonnable des
-        // indicateurs, tout en refusant net un N+1 — qui produirait ici au
-        // moins 5 requêtes supplémentaires, et des centaines en production.
+        // Le lot 12 y a ajouté un nombre fixe de requêtes (série, tendances,
+        // entonnoir d'un seul projet, priorités du jour, classement) : 25 sur
+        // ce jeu. 35 laisse une marge, et un N+1 sur cinq projets le
+        // dépasserait encore dès qu'il toucherait deux répartitions.
         $this->assertLessThan(
-            20,
+            35,
             $requetes,
             "Le tableau de bord a émis {$requetes} requêtes : une répartition par projet doit passer par un GROUP BY unique, jamais par une requête par projet."
         );

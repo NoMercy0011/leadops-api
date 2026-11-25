@@ -33,7 +33,7 @@ class PipelineHealthService
      * qu'on ne sache déjà. Ce n'est pas une règle métier du client mais un
      * repère d'affichage, d'où sa place ici plutôt qu'en base.
      */
-    private const JOURS_AVANT_IMMOBILITE = 14;
+    public const JOURS_AVANT_IMMOBILITE = 14;
 
     /**
      * @return array{

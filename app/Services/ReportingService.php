@@ -85,7 +85,7 @@ final class ReportingService
      *
      * @return array<string, mixed>
      */
-    public function dashboard(User $viewer): array
+    public function dashboard(User $viewer, string $periode = '30d', ?int $projetEntonnoir = null): array
     {
         $fuseau = TimezoneResolver::for($viewer);
         [$ouverture, $fermeture] = TimezoneResolver::dayBounds($fuseau);
@@ -131,6 +131,8 @@ final class ReportingService
             ],
             'by_stage' => $this->parEtape($viewer),
             'by_project' => $this->parProjet($viewer, [], null, null),
+            // Lot 12 : tendances, série, entonnoir, priorités, classement.
+            ...app(DashboardInsights::class)->for($viewer, $periode, $projetEntonnoir),
         ];
     }
 
@@ -380,17 +382,19 @@ final class ReportingService
      *
      * @return array<string, mixed>
      */
-    public function cachedDashboard(User $viewer): array
+    public function cachedDashboard(User $viewer, string $periode = '30d', ?int $projetEntonnoir = null): array
     {
         $version = self::version($viewer->company_id);
 
         return cache()->remember(
-            "dashboard:v{$version}:u{$viewer->id}",
+            // Période et projet de l'entonnoir dans la clé (lot 12) : sans eux,
+            // la vue de 7 jours servirait celle de 30.
+            "dashboard:v{$version}:u{$viewer->id}:{$periode}:".($projetEntonnoir ?? '-'),
             // Cinq minutes : au-delà, un commercial qui vient de convertir un
             // prospect ne verrait pas son geste se refléter, et douterait de
             // l'outil plutôt que d'attendre.
             now()->addMinutes(5),
-            fn () => $this->dashboard($viewer),
+            fn () => $this->dashboard($viewer, $periode, $projetEntonnoir),
         );
     }
 

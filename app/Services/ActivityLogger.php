@@ -116,6 +116,18 @@ final class ActivityLogger
     }
 
     /**
+     * Entretien guidé clos — lot 13, règle R5.
+     */
+    public function interviewCompleted(Prospect $prospect, int $duree, int $prevu, int $reponses): void
+    {
+        $this->write($prospect, ActivityType::InterviewCompleted, [
+            'duration_seconds' => $duree,
+            'planned_seconds' => $prevu,
+            'answers' => $reponses,
+        ]);
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      */
     private function write(Prospect $prospect, ActivityType $type, array $payload = []): void

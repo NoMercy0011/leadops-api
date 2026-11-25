@@ -30,6 +30,8 @@ class QuestionResource extends JsonResource
             'label' => $this->label,
             'help' => $this->help,
             'required' => $this->required,
+            // Durée prévue en secondes (lot 13, R1), `null` sans durée.
+            'planned_seconds' => $this->planned_seconds,
             'position' => $this->position,
 
             // Le front s'en sert pour choisir entre une valeur unique et un

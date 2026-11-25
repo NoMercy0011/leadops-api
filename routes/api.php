@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\Auth\MeController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
 use App\Http\Controllers\Api\V1\DataQualityController;
 use App\Http\Controllers\Api\V1\FilterOptionsController;
+use App\Http\Controllers\Api\V1\InterviewController;
 use App\Http\Controllers\Api\V1\PipelineHealthController;
 use App\Http\Controllers\Api\V1\PipelineStageController;
 use App\Http\Controllers\Api\V1\ProjectActivityController;
@@ -184,6 +185,16 @@ Route::prefix('v1')->middleware('throttle:api')->group(function () {
             Route::patch('projects/{project}/questions/reorder', [QuestionController::class, 'reorder'])->name('projects.questions.reorder');
             Route::patch('questions/{question}', [QuestionController::class, 'update'])->name('questions.update');
             Route::delete('questions/{question}', [QuestionController::class, 'destroy'])->name('questions.destroy');
+
+            // Entretien guidé — lot 13. Le plan et les durées personnelles
+            // servent aussi à la simulation, qui n'écrit rien d'autre.
+            Route::get('projects/{project}/interview-plan', [InterviewController::class, 'plan'])->name('projects.interview-plan');
+            Route::put('projects/{project}/my-timings', [InterviewController::class, 'saveTimings'])->name('projects.my-timings.save');
+            Route::delete('projects/{project}/my-timings', [InterviewController::class, 'resetTimings'])->name('projects.my-timings.reset');
+            Route::post('prospects/{prospect}/interviews', [InterviewController::class, 'start'])->name('prospects.interviews.start');
+            Route::get('prospects/{prospect}/interviews/current', [InterviewController::class, 'current'])->name('prospects.interviews.current');
+            Route::put('interviews/{interview}/answers/{question}', [InterviewController::class, 'answer'])->name('interviews.answer');
+            Route::post('interviews/{interview}/finish', [InterviewController::class, 'finish'])->name('interviews.finish');
         });
     });
 });

@@ -12,6 +12,7 @@ use App\Services\PipelineService;
 use App\Services\ProjectJournal;
 use App\Services\ReportingService;
 use App\Services\SubscriptionLimitService;
+use App\Support\PageSize;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -52,7 +53,7 @@ class ProjectController extends Controller
                 fn ($query, int $variantId) => $query->where('variant_id', $variantId)
             )
             ->orderBy('name')
-            ->paginate(25)
+            ->paginate(PageSize::from($request))
             ->withQueryString();
 
         return ProjectResource::collection($projects);

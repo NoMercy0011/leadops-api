@@ -7,6 +7,7 @@ use App\Http\Requests\StoreUserRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Services\SubscriptionLimitService;
+use App\Support\PageSize;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -22,7 +23,7 @@ class UserController extends Controller
         // Deux couches successives : CompanyScope a déjà borné la requête à
         // l'entreprise, `visibleTo` applique ensuite la restriction de rôle.
         return UserResource::collection(
-            User::query()->visibleTo($viewer)->orderBy('name')->paginate(25)
+            User::query()->visibleTo($viewer)->orderBy('name')->paginate(PageSize::from($request))->withQueryString()
         );
     }
 

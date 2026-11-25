@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToCompany;
+use App\Models\Scopes\NonArchivedScope;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -53,7 +54,10 @@ class Interview extends Model
      */
     public function prospect(): BelongsTo
     {
-        return $this->belongsTo(Prospect::class);
+        // Archivé compris (revue du lot 13) : filtrée, la relation revenait
+        // `null` après un archivage en cours d'entretien, et la policy
+        // répondait 403 au lieu du refus de lecture seule.
+        return $this->belongsTo(Prospect::class)->withoutGlobalScope(NonArchivedScope::class);
     }
 
     /**

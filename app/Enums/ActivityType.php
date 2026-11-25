@@ -25,6 +25,7 @@ enum ActivityType: string
     case Archived = 'archived';
     case Unarchived = 'unarchived';
     case Erased = 'erased';
+    case InterviewCompleted = 'interview_completed';
 
     public function label(): string
     {
@@ -43,6 +44,7 @@ enum ActivityType: string
             self::Archived => 'Prospect archivé',
             self::Unarchived => 'Prospect désarchivé',
             self::Erased => 'Données personnelles effacées',
+            self::InterviewCompleted => 'Entretien mené',
         };
     }
 

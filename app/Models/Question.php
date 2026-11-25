@@ -25,8 +25,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property bool $required
  * @property int $position
  * @property Collection<int, QuestionOption> $options
+ * @property int|null $planned_seconds
  */
-#[Fillable(['company_id', 'project_id', 'type', 'label', 'help', 'required', 'position'])]
+#[Fillable(['company_id', 'project_id', 'type', 'label', 'help', 'required', 'planned_seconds', 'position'])]
 class Question extends Model
 {
     /** @use HasFactory<QuestionFactory> */
@@ -48,6 +49,8 @@ class Question extends Model
             'type' => QuestionType::class,
             'required' => 'boolean',
             'position' => 'integer',
+            // Durée prévue en secondes, lot 13 (R1).
+            'planned_seconds' => 'integer',
         ];
     }
 

@@ -51,6 +51,7 @@ final class QuestionnaireService
                 'label' => $donnees['label'],
                 'help' => $donnees['help'] ?? null,
                 'required' => $donnees['required'] ?? false,
+                'planned_seconds' => $donnees['planned_seconds'] ?? null,
                 'position' => $this->nextPosition($project),
             ]);
 
@@ -85,7 +86,7 @@ final class QuestionnaireService
 
         return DB::transaction(function () use ($question, $donnees) {
             $question->update(array_intersect_key($donnees, array_flip([
-                'type', 'label', 'help', 'required',
+                'type', 'label', 'help', 'required', 'planned_seconds',
             ])));
 
             if (array_key_exists('options', $donnees)) {

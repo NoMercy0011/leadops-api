@@ -123,9 +123,13 @@ class QuestionController extends Controller
             'label' => [$presence, 'string', 'max:255'],
             'help' => ['sometimes', 'nullable', 'string', 'max:255'],
             'required' => ['sometimes', 'boolean'],
+            // Durée prévue, lot 13 (R1, H-1) : de 0:15 à 15:00.
+            'planned_seconds' => ['sometimes', 'nullable', 'integer', 'between:15,900'],
             'options' => ['sometimes', 'array'],
             'options.*.label' => ['required_with:options', 'string', 'max:255'],
             'options.*.value' => ['sometimes', 'nullable', 'string', 'max:255'],
+        ], [
+            'planned_seconds.between' => 'La durée doit être comprise entre 0:15 et 15:00.',
         ]);
 
         $this->assertOptionsCoherentes($request, $donnees, $partiel);

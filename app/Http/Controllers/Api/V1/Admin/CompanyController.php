@@ -10,6 +10,7 @@ use App\Http\Requests\Admin\UpdateCompanyRequest;
 use App\Http\Resources\CompanyResource;
 use App\Models\Company;
 use App\Models\Subscription;
+use App\Support\PageSize;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -34,7 +35,7 @@ class CompanyController extends Controller
                 fn ($query, string $statut) => $query->where('status', $statut)
             )
             ->orderBy('name')
-            ->paginate(20)
+            ->paginate(PageSize::from($request, 20))
             ->withQueryString();
 
         return CompanyResource::collection($companies);

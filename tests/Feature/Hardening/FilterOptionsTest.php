@@ -45,7 +45,7 @@ class FilterOptionsTest extends TestCase
             ->assertOk()
             ->assertJsonCount(30, 'data.projects')
             ->assertJsonCount(31, 'data.users')
-            ->assertJsonStructure(['data' => ['projects' => [['id', 'name', 'status']], 'users' => [['id', 'name', 'role']]]]);
+            ->assertJsonStructure(['data' => ['projects' => [['id', 'name', 'status']], 'users' => [['id', 'name', 'role', 'role_label']]]]);
     }
 
     public function test_rien_d_une_autre_entreprise(): void
@@ -72,7 +72,11 @@ class FilterOptionsTest extends TestCase
             ->getJson('/api/v1/options')
             ->assertOk()
             ->assertJsonCount(1, 'data.projects')
-            ->assertJsonPath('data.projects.0.id', $sien->id);
+            ->assertJsonPath('data.projects.0.id', $sien->id)
+            // Réaffectation et équipe lisent ces utilisateurs (lot 11) : un
+            // commercial n'y voit que lui-même.
+            ->assertJsonCount(1, 'data.users')
+            ->assertJsonPath('data.users.0.id', $commercial->id);
     }
 
     public function test_un_manager_ne_voit_que_son_equipe(): void

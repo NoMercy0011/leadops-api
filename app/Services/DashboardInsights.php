@@ -260,6 +260,7 @@ final class DashboardInsights
                     'id' => $r->id,
                     'scheduled_at' => $r->scheduled_at->toIso8601String(),
                     'type' => $r->type->value,
+                    'type_label' => $r->type->label(),
                     'prospect' => ['id' => $r->prospect_id, 'name' => $r->prospect->fullName()],
                     'project' => ['id' => $r->project_id, 'name' => $r->project->name],
                 ])->all(),

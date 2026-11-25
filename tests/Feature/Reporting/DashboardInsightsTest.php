@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Reporting;
 
+use App\Enums\AppointmentStatus;
+use App\Models\Appointment;
 use App\Models\Company;
 use App\Models\PipelineStage;
 use App\Models\Plan;
@@ -126,7 +128,10 @@ class DashboardInsightsTest extends TestCase
         $tableau = $this->tableau($this->admin, '?period=90d');
 
         $this->assertSame('week', $tableau['period']['granularity']);
-        foreach ($tableau['series'] as $point) {
+        // La première semaine, partielle, est datée du début de la période
+        // (revue du lot 12) ; les suivantes, de leur lundi.
+        $this->assertSame($tableau['period']['from'], $tableau['series'][0]['date']);
+        foreach (array_slice($tableau['series'], 1) as $point) {
             $this->assertSame(1, CarbonImmutable::parse($point['date'])->dayOfWeekIso, $point['date']);
         }
     }
@@ -221,6 +226,67 @@ class DashboardInsightsTest extends TestCase
         $this->assertSame([0, 0, 0, 1, 0, 1, 0], $classement[0]['last_7_days']);
         $this->assertSame('Toky Andria', $classement[1]['user']['name']);
         $this->assertSame(0, $classement[1]['converted']);
+    }
+
+    // ---- Revue du lot 12 -------------------------------------------------
+
+    public function test_un_prospect_archive_sort_des_conversions(): void
+    {
+        $prospect = Prospect::factory()->forProject($this->project)->create();
+        $this->deplacerLe('2026-11-22 08:00:00', $prospect, 'Converti');
+        $this->actingAs($this->admin)
+            ->patchJson("/api/v1/prospects/{$prospect->id}/archive", ['archived' => true])->assertOk();
+
+        $tableau = $this->tableau($this->admin);
+
+        $this->assertSame(0, $tableau['kpis']['converted']['value']);
+        $this->assertSame(0, array_sum(array_column($tableau['series'], 'converted')));
+    }
+
+    public function test_un_projet_d_entonnoir_hors_perimetre_retombe_sur_le_defaut(): void
+    {
+        $autre = Company::factory()->create();
+        $etranger = Project::factory()->forCompany($autre)->create();
+
+        $entonnoir = $this->tableau($this->admin, "?period=7d&funnel_project_id={$etranger->id}")['funnel'];
+
+        $this->assertSame($this->project->id, $entonnoir['project']['id']);
+        $this->assertNotContains($etranger->id, array_column($entonnoir['projects'], 'id'));
+    }
+
+    public function test_le_classement_d_un_manager_se_limite_a_son_equipe(): void
+    {
+        $manager = User::factory()->manager()->forCompany($this->company)->create();
+        $sien = User::factory()->commercial()->forCompany($this->company)->managedBy($manager)->create(['name' => 'Malala Rasoa']);
+        User::factory()->commercial()->forCompany($this->company)->create(['name' => 'Hors équipe']);
+
+        $noms = array_column(array_column($this->tableau($manager)['leaderboard'], 'user'), 'name');
+
+        $this->assertSame([$sien->name], $noms);
+    }
+
+    public function test_chaque_periode_a_sa_propre_entree_de_cache(): void
+    {
+        $this->assertSame('7d', $this->tableau($this->admin, '?period=7d')['period']['key']);
+        $this->assertSame('30d', $this->tableau($this->admin, '?period=30d')['period']['key']);
+    }
+
+    public function test_les_rendez_vous_annules_ou_archives_ne_comptent_ni_au_classement_ni_a_faire(): void
+    {
+        $commercial = User::factory()->commercial()->forCompany($this->company)->create();
+        $actif = Prospect::factory()->forProject($this->project)->assignedTo($commercial)->create();
+        $archive = Prospect::factory()->forProject($this->project)->assignedTo($commercial)->create();
+        // 15:00 UTC = 18:00 à Antananarivo, plus tard aujourd'hui.
+        Appointment::factory()->forProspect($actif)->at('2026-11-25 15:00:00')->create();
+        Appointment::factory()->forProspect($actif)->at('2026-11-25 16:00:00')->withStatus(AppointmentStatus::Cancelled)->create();
+        Appointment::factory()->forProspect($archive)->at('2026-11-25 17:00:00')->create();
+        $this->actingAs($this->admin)
+            ->patchJson("/api/v1/prospects/{$archive->id}/archive", ['archived' => true])->assertOk();
+
+        $tableau = $this->tableau($this->admin);
+
+        $this->assertSame(1, $tableau['leaderboard'][0]['appointments']);
+        $this->assertSame(1, $tableau['today']['appointments']['count']);
     }
 
     public function test_une_periode_inconnue_est_refusee(): void

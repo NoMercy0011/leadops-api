@@ -147,8 +147,11 @@ final class DashboardInsights
      */
     private function serie(Collection $passages, CarbonImmutable $debut, CarbonImmutable $fin, string $granularite): array
     {
+        // La première semaine, partielle, est datée du début de la période et
+        // non du lundi qui la précède (revue du lot 12) : l'axe ne sort pas
+        // de l'intervalle annoncé.
         $cle = fn (string $date) => $granularite === 'week'
-            ? CarbonImmutable::parse($date)->startOfWeek(CarbonImmutable::MONDAY)->toDateString()
+            ? max(CarbonImmutable::parse($date)->startOfWeek(CarbonImmutable::MONDAY)->toDateString(), $debut->toDateString())
             : $date;
 
         $points = [];
@@ -242,7 +245,9 @@ final class DashboardInsights
         $enRetard = $planifies()->where('scheduled_at', '<', now());
         $plusAncien = (clone $enRetard)->min('scheduled_at');
 
-        $duJour = Appointment::query()->visibleTo($viewer)->ofActiveProspects()
+        // Planifiés seulement (revue du lot 12) : un rendez-vous annulé ou
+        // déjà tenu n'est pas « à faire ».
+        $duJour = $planifies()
             ->between($ouverture, $fermeture)
             ->with(['prospect', 'project:id,name'])
             ->orderBy('scheduled_at');
@@ -306,7 +311,10 @@ final class DashboardInsights
             ->selectRaw('assigned_user_id, count(*) as total')->groupBy('assigned_user_id')
             ->pluck('total', 'assigned_user_id');
 
-        $rdv = Appointment::query()->visibleTo($viewer)
+        // Prospects actifs et rendez-vous non annulés (revue du lot 12) : la
+        // jointure brute sur `prospects` échappait à NonArchivedScope.
+        $rdv = Appointment::query()->visibleTo($viewer)->ofActiveProspects()
+            ->where('appointments.status', '!=', AppointmentStatus::Cancelled->value)
             ->whereBetween('appointments.scheduled_at', [$de, $a])
             ->join('prospects', 'appointments.prospect_id', '=', 'prospects.id')
             ->selectRaw('prospects.assigned_user_id as uid, count(*) as total')

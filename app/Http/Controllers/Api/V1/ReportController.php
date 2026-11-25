@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Project;
 use App\Models\Prospect;
 use App\Services\DashboardInsights;
 use App\Services\ReportingService;
@@ -39,7 +40,12 @@ class ReportController extends Controller
             'data' => $this->reporting->cachedDashboard(
                 $request->user(),
                 $valide['period'] ?? '30d',
-                isset($valide['funnel_project_id']) ? (int) $valide['funnel_project_id'] : null,
+                // Résolu avant la clé de cache (revue du lot 12) : un identifiant
+                // hors périmètre retombe sur le défaut, sans créer d'entrée.
+                isset($valide['funnel_project_id'])
+                    && Project::query()->visibleTo($request->user())->whereKey((int) $valide['funnel_project_id'])->exists()
+                    ? (int) $valide['funnel_project_id']
+                    : null,
             ),
         ]);
     }

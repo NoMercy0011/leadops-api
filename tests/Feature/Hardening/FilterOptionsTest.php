@@ -45,7 +45,7 @@ class FilterOptionsTest extends TestCase
             ->assertOk()
             ->assertJsonCount(30, 'data.projects')
             ->assertJsonCount(31, 'data.users')
-            ->assertJsonStructure(['data' => ['projects' => [['id', 'name', 'status']], 'users' => [['id', 'name', 'role']]]]);
+            ->assertJsonStructure(['data' => ['projects' => [['id', 'name', 'status']], 'users' => [['id', 'name', 'role', 'role_label']]]]);
     }
 
     public function test_rien_d_une_autre_entreprise(): void

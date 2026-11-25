@@ -36,7 +36,8 @@ class FilterOptionsController extends Controller
                     ->visibleTo($viewer)
                     ->orderBy('name')
                     ->get(['id', 'name', 'role'])
-                    ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'role' => $u->role->value])
+                    // `role_label` sert à l'équipe d'un projet (lot 11, constat C1).
+                    ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'role' => $u->role->value, 'role_label' => $u->role->label()])
                     ->values(),
             ],
         ]);

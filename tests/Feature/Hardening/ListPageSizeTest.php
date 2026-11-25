@@ -45,6 +45,11 @@ class ListPageSizeTest extends TestCase
             ->assertOk()->assertJsonPath('meta.per_page', 2)->assertJsonPath('meta.last_page', 2);
         $this->actingAs($this->admin)->getJson('/api/v1/projects?per_page=0')
             ->assertOk()->assertJsonPath('meta.per_page', 25);
+        // Le web redirige une page trop lointaine vers la dernière (C2) : il
+        // compte sur une page vide accompagnée du vrai total (revue du lot 11).
+        $this->actingAs($this->admin)->getJson('/api/v1/projects?per_page=2&page=9')
+            ->assertOk()->assertJsonCount(0, 'data')
+            ->assertJsonPath('meta.total', 3)->assertJsonPath('meta.last_page', 2);
     }
 
     public function test_les_utilisateurs_suivent_la_taille_de_page_bornee(): void
@@ -55,6 +60,8 @@ class ListPageSizeTest extends TestCase
             ->assertOk()->assertJsonPath('meta.per_page', 100)->assertJsonCount(3, 'data');
         $this->actingAs($this->admin)->getJson('/api/v1/users?per_page=2')
             ->assertOk()->assertJsonPath('meta.last_page', 2);
+        $this->actingAs($this->admin)->getJson('/api/v1/users?per_page=0')
+            ->assertOk()->assertJsonPath('meta.per_page', 25);
     }
 
     public function test_les_entreprises_suivent_la_taille_de_page_bornee(): void

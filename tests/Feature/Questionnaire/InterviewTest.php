@@ -8,6 +8,7 @@ use App\Models\Plan;
 use App\Models\Project;
 use App\Models\Prospect;
 use App\Models\Question;
+use App\Models\QuestionOption;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Services\PipelineService;
@@ -218,6 +219,93 @@ class InterviewTest extends TestCase
         $this->assertDatabaseCount('question_timings', 0);
     }
 
+    // ---- Revue du lot 13 -------------------------------------------------
+
+    private function choixMultiple(bool $requise): Question
+    {
+        $question = Question::factory()->forProject($this->project)->ofType(QuestionType::MultipleChoice)
+            ->create(['label' => 'Garanties', 'required' => $requise]);
+        foreach ([['Dentaire', 'dentaire'], ['Optique', 'optique']] as $i => [$libelle, $valeur]) {
+            QuestionOption::query()->create([
+                'company_id' => $question->company_id, 'question_id' => $question->id,
+                'label' => $libelle, 'value' => $valeur, 'position' => $i + 1,
+            ]);
+        }
+
+        return $question;
+    }
+
+    public function test_un_choix_multiple_hors_options_est_refuse(): void
+    {
+        $garanties = $this->choixMultiple(false);
+        $id = $this->demarrer();
+
+        $this->putJson("/api/v1/interviews/{$id}/answers/{$garanties->id}", ['value' => ['n_importe_quoi']])
+            ->assertUnprocessable();
+        $this->putJson("/api/v1/interviews/{$id}/answers/{$garanties->id}", ['value' => ['dentaire']])->assertOk();
+    }
+
+    public function test_un_choix_multiple_obligatoire_tout_decoche_ne_passe_pas_terminer(): void
+    {
+        $garanties = $this->choixMultiple(true);
+        $id = $this->demarrer();
+        $this->putJson("/api/v1/interviews/{$id}/answers/{$this->obligatoire->id}", ['value' => 4])->assertOk();
+        $this->putJson("/api/v1/interviews/{$id}/answers/{$garanties->id}", ['value' => []])->assertOk();
+
+        $this->postJson("/api/v1/interviews/{$id}/finish")
+            ->assertUnprocessable()->assertJsonValidationErrors("answers.{$garanties->id}");
+    }
+
+    public function test_une_seconde_cloture_est_refusee_et_n_ecrit_pas_deux_fois(): void
+    {
+        $id = $this->demarrer();
+        $this->putJson("/api/v1/interviews/{$id}/answers/{$this->obligatoire->id}", ['value' => 4])->assertOk();
+
+        $this->postJson("/api/v1/interviews/{$id}/finish")->assertOk();
+        $this->postJson("/api/v1/interviews/{$id}/finish")->assertStatus(409)->assertJsonPath('code', 'interview.closed');
+
+        $this->assertSame(1, DB::table('prospect_activities')->where('type', 'interview_completed')->count());
+    }
+
+    public function test_une_question_d_un_autre_projet_est_refusee(): void
+    {
+        $autreProjet = Project::factory()->forCompany($this->company)->create();
+        $etrangere = Question::factory()->forProject($autreProjet)->ofType(QuestionType::Text)->create();
+        $id = $this->demarrer();
+
+        $this->putJson("/api/v1/interviews/{$id}/answers/{$etrangere->id}", ['value' => 'x'])
+            ->assertUnprocessable()->assertJsonValidationErrors('value');
+        $this->putJson("/api/v1/projects/{$this->project->id}/my-timings", [
+            'timings' => [['question_id' => $etrangere->id, 'seconds' => 60]],
+        ])->assertUnprocessable();
+    }
+
+    public function test_un_archivage_en_cours_d_entretien_bloque_l_ecriture(): void
+    {
+        $id = $this->demarrer();
+        $admin = User::factory()->adminClient()->forCompany($this->company)->create();
+        $this->actingAs($admin)->patchJson("/api/v1/prospects/{$this->prospect->id}/archive", ['archived' => true])->assertOk();
+
+        $this->actingAs($this->commercial)
+            ->putJson("/api/v1/interviews/{$id}/answers/{$this->libre->id}", ['value' => 'x'])
+            ->assertUnprocessable()->assertJsonPath('code', 'archive.read_only');
+    }
+
+    public function test_un_manager_ne_reprend_pas_l_entretien_d_un_commercial(): void
+    {
+        $id = $this->demarrer();
+        $manager = User::factory()->manager()->forCompany($this->company)->create();
+        $this->commercial->update(['manager_id' => $manager->id]);
+
+        $this->actingAs($manager)->putJson("/api/v1/interviews/{$id}/answers/{$this->libre->id}", ['value' => 'x'])->assertForbidden();
+        $this->actingAs($manager)->postJson("/api/v1/prospects/{$this->prospect->id}/interviews")
+            ->assertStatus(409)->assertJsonPath('code', 'interview.already_open');
+    }
+
+    /**
+     * La simulation est côté écran ; ce test tient la frontière serveur :
+     * lire le plan et garder des durées n'écrivent rien d'autre.
+     */
     public function test_une_simulation_n_ecrit_ni_reponse_ni_journal(): void
     {
         $activites = DB::table('prospect_activities')->count();

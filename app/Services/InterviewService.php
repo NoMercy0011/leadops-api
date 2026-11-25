@@ -77,14 +77,14 @@ final class InterviewService
 
         DB::transaction(function () use ($durees, $ids, $user) {
             foreach ($durees as $i => $d) {
-                if (! in_array($d['question_id'], $ids, true)) {
+                if (! in_array((int) $d['question_id'], $ids, true)) {
                     throw ValidationException::withMessages([
                         "timings.{$i}.question_id" => "Cette question n'appartient pas au projet.",
                     ]);
                 }
                 $secondes = max(self::DUREE_MIN, min(self::DUREE_MAX, (int) (round($d['seconds'] / 5) * 5)));
                 QuestionTiming::query()->updateOrCreate(
-                    ['user_id' => $user->id, 'question_id' => $d['question_id']],
+                    ['user_id' => $user->id, 'question_id' => (int) $d['question_id']],
                     ['company_id' => $user->company_id, 'seconds' => $secondes],
                 );
             }
@@ -156,16 +156,31 @@ final class InterviewService
             throw ValidationException::withMessages(['value' => "Cette question n'appartient pas au questionnaire de l'entretien."]);
         }
 
-        $regles = $this->regles->forQuestion($question);
-        $regles[0] = 'nullable';
-        $messages = [];
-        foreach ($this->regles->messages(collect([$question])) as $cle => $texte) {
-            $messages[str_replace("answers.{$question->id}", 'value', $cle)] = $texte;
+        // Mêmes règles que la fiche, éléments d'un choix multiple compris
+        // (`answers.{id}.*`, revue du lot 13), moins l'obligation : seule
+        // la clé change, `answers.{id}` devient `value`.
+        $cle = "answers.{$question->id}";
+        $regles = [];
+        foreach ($this->regles->forQuestions(collect([$question])) as $champ => $liste) {
+            $regles[str_replace($cle, 'value', $champ)] = $liste;
         }
-        $valide = Validator::make(['value' => $valeur], ['value' => $regles], $messages)->validate();
+        $regles['value'][0] = 'nullable';
+        $messages = [];
+        foreach ($this->regles->messages(collect([$question])) as $champ => $texte) {
+            $messages[str_replace($cle, 'value', $champ)] = $texte;
+        }
+        $valide = Validator::make(['value' => $valeur], $regles, $messages)->validate();
         $valeur = $this->regles->cast($question, $valide['value'] ?? null);
+        // Un choix multiple tout décoché est une absence de réponse, pas une
+        // réponse vide : sinon une obligatoire passerait « Terminer ».
+        if ($valeur === []) {
+            $valeur = null;
+        }
 
         return DB::transaction(function () use ($entretien, $question, $valeur) {
+            // Verrou et relecture (revue du lot 13) : une réponse qui arrive
+            // pendant la clôture ne s'écrit pas après `finished_at`.
+            $entretien = $this->verrouiller($entretien);
             $prospect = $entretien->prospect;
             if ($valeur === null) {
                 ProspectAnswer::query()->where('prospect_id', $prospect->id)->where('question_id', $question->id)->delete();
@@ -191,21 +206,24 @@ final class InterviewService
     public function finish(Interview $entretien): Interview
     {
         $this->assertOuvert($entretien);
-        $prospect = $entretien->prospect;
-        $questions = $this->questionnaire->questionsFor($prospect->project);
-        $repondues = ProspectAnswer::query()->where('prospect_id', $prospect->id)->pluck('question_id')->all();
 
-        $manquantes = [];
-        foreach ($questions as $q) {
-            if ($q->required && ! in_array($q->id, $repondues, true)) {
-                $manquantes["answers.{$q->id}"] = "« {$q->label} » est obligatoire.";
+        return DB::transaction(function () use ($entretien) {
+            // Verrou et relecture (revue du lot 13) : deux clôtures
+            // simultanées n'écrivent pas deux « Entretien mené » au journal.
+            $entretien = $this->verrouiller($entretien);
+            $prospect = $entretien->prospect;
+            $repondues = ProspectAnswer::query()->where('prospect_id', $prospect->id)->pluck('question_id')->all();
+
+            $manquantes = [];
+            foreach ($this->questionnaire->questionsFor($prospect->project) as $q) {
+                if ($q->required && ! in_array($q->id, $repondues, true)) {
+                    $manquantes["answers.{$q->id}"] = "« {$q->label} » est obligatoire.";
+                }
             }
-        }
-        if ($manquantes !== []) {
-            throw ValidationException::withMessages($manquantes);
-        }
+            if ($manquantes !== []) {
+                throw ValidationException::withMessages($manquantes);
+            }
 
-        return DB::transaction(function () use ($entretien, $prospect) {
             $entretien->update(['finished_at' => now(), 'answered_count' => $this->repondues($prospect)]);
             $this->journal->interviewCompleted(
                 $prospect,
@@ -216,6 +234,17 @@ final class InterviewService
 
             return $entretien->fresh(['user']) ?? $entretien;
         });
+    }
+
+    /**
+     * Relit l'entretien sous verrou et vérifie qu'il est toujours ouvert.
+     */
+    private function verrouiller(Interview $entretien): Interview
+    {
+        $frais = Interview::query()->whereKey($entretien->id)->lockForUpdate()->firstOrFail();
+        $this->assertOuvert($frais);
+
+        return $frais;
     }
 
     private function assertOuvert(Interview $entretien): void
